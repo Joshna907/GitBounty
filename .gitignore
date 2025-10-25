@@ -1,0 +1,55 @@
+# =====================================================
+# 🌐 FRONTEND (React / Vite / Next.js)
+# =====================================================
+node_modules/
+dist/
+build/
+.cache/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor files
+.vscode/
+.idea/
+.DS_Store
+
+# =====================================================
+# ⚙️ BACKEND (Node.js + Express)
+# =====================================================
+backend/node_modules/
+backend/.env
+backend/logs/
+backend/uploads/
+backend/temp/
+backend/.DS_Store
+
+# =====================================================
+# ⛓️ BLOCKCHAIN (Hardhat / Truffle / Foundry)
+# =====================================================
+blockchain/node_modules/
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain/
+blockchain/.env
+blockchain/.DS_Store
+
+# =====================================================
+# 🧪 Common
+# =====================================================
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+
+# Ignore system files
+Thumbs.db
