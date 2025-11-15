@@ -1,6 +1,16 @@
-require("@nomicfoundation/hardhat-ethers");
+import "@nomicfoundation/hardhat-ethers";
+import dotenv from "dotenv";
+dotenv.config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
-module.exports = {
-  solidity: "0.8.28",
+const config = {
+  solidity: "0.8.20",
+  networks: {
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL,
+      accounts: [process.env.PRIVATE_KEY],
+    },
+  },
 };
+
+export default config;
