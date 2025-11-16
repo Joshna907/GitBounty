@@ -1,7 +1,10 @@
 import React, { useState } from "react";
 import { FaSearch } from "react-icons/fa";
+import { testBounties } from "../data/testBounties";
+import { useNavigate } from "react-router-dom";
 
 const ExploreBounty = () => {
+   const navigate = useNavigate();
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState("Reward Range");
@@ -15,21 +18,27 @@ const ExploreBounty = () => {
 
   return (
     <div className="min-h-screen bg-[#090909] text-white font-poppins">
-      {/* ---- Hero Section ---- */}
-      <div className="text-left py-32 px-10 bg-[#090909]">
 
-        <h1 className="text-6xl font-bold mt-4">
-          Explore: <span className="text-[#f50090]">Bug Bounties</span>
-        </h1>
-        <p className="text-gray-400 text-[20px] max-w-3xl mt-6 leading-relaxed">
-          Discover verified Web2 And Web3 bounty programs powered by Gasless GitBounty.  
-          All metrics update daily, ensuring transparency while keeping sensitive report details confidential.
-        </p>
+      {/* ---- Hero Section (Aligned With Logo) ---- */}
+      <div className="py-32 px-20 bg-[#090909]">
+        <div className="max-w-4xl">
 
+          <h1 className="text-6xl font-bold mt-4">
+            Explore: <span className="text-[#f50090]">Bug Bounties</span>
+          </h1>
+
+          <p className="text-gray-400 text-[20px] max-w-3xl mt-6 leading-relaxed">
+            Discover verified Web2 And Web3 bounty programs powered by Gasless GitBounty.
+            All metrics update daily, ensuring transparency while keeping sensitive
+            report details confidential.
+          </p>
+
+        </div>
       </div>
 
       {/* ---- Top Filter Bar ---- */}
       <div className="bg-[#0d0d0d] mx-10 px-6 py-4 rounded-lg flex flex-col md:flex-row justify-between items-center shadow-[0_0_15px_rgba(245,0,144,0.3)] border border-[#f50090]/20 gap-4">
+
         {/* Left Buttons */}
         <div className="flex items-center gap-3">
           <button className="text-xl font-semibold text-white px-6 py-3 bg-gradient-to-r from-[#f50090] to-[#9b23ea] rounded-md hover:opacity-90 transition">
@@ -55,16 +64,19 @@ const ExploreBounty = () => {
             className="bg-transparent text-white placeholder-gray-500 outline-none w-full"
           />
         </div>
+
       </div>
 
       {/* ---- Filter Section ---- */}
       {showFilters && (
         <div className="bg-[#0d0d0d] border border-[#f50090]/30 rounded-lg px-8 py-8 mt-6 mx-10 flex flex-col md:flex-row gap-6 shadow-[0_0_20px_rgba(245,0,144,0.2)]">
+
           {/* Left Filter Column */}
           <div className="w-full md:w-1/4 border-r border-[#f50090]/30 pr-4">
             <h3 className="text-xl font-semibold mb-4 text-[#f50090]">
               Filter By
             </h3>
+
             <ul className="space-y-4 text-gray-300 text-lg">
               {Object.keys(filterOptions).map((item, idx) => (
                 <li
@@ -88,10 +100,12 @@ const ExploreBounty = () => {
               <span className="text-xl font-semibold text-gray-200">
                 Select to limit results
               </span>
+
               <div className="flex gap-2">
                 <button className="text-sm text-gray-400 px-3 py-1 border border-[#f50090]/40 rounded hover:bg-[#1a1a1a] transition">
                   Clear Filters
                 </button>
+
                 <button className="text-sm text-white px-3 py-1 rounded bg-gradient-to-r from-[#f50090] to-[#9b23ea] hover:opacity-90 transition">
                   View 290 Bounties
                 </button>
@@ -113,6 +127,7 @@ const ExploreBounty = () => {
               ))}
             </div>
           </div>
+
         </div>
       )}
 
@@ -129,6 +144,7 @@ const ExploreBounty = () => {
               <th className="p-4 border-b border-[#f50090]/20 text-center">Action</th>
             </tr>
           </thead>
+
           <tbody>
             {[1, 2, 3, 4].map((i) => (
               <tr
@@ -141,13 +157,20 @@ const ExploreBounty = () => {
                 <td className="p-4 text-green-400">$500</td>
                 <td className="p-4 text-gray-400">20/12/2025</td>
                 <td className="p-4 text-center">
-                  <button className="bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-4 py-2 rounded-full hover:opacity-90 transition">
-                    View Bounty
-                  </button>
+                  <button
+  onClick={() => navigate(`/bounty/${i}`, { state: { bounty: testBounties[i - 1] } })}
+  className="bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-4 py-2 rounded-full hover:opacity-90 transition"
+>
+  View Bounty
+</button>
+
+
+
                 </td>
               </tr>
             ))}
           </tbody>
+
         </table>
       </div>
 
@@ -155,6 +178,7 @@ const ExploreBounty = () => {
       <div className="text-center text-gray-500 text-sm py-8">
         Showing all 290 bounty programs
       </div>
+
     </div>
   );
 };

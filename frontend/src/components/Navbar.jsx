@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from "react-router-dom"; 
+import { User } from 'lucide-react';
 
 const Navbar = () => {
   return (
@@ -46,6 +47,17 @@ const Navbar = () => {
           >
             Sign in
             <span className="absolute bottom-[-4px] left-0 w-0 h-[2px] bg-[#f50090] transition-all duration-300 hover:w-full"></span>
+          </Link>
+
+          {/* Profile Icon */}
+          <Link
+            to="/dashboard"
+            className="relative group"
+            aria-label="Profile"
+          >
+            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#f50090] to-[#9b23ea] flex items-center justify-center hover:shadow-[0_0_15px_rgba(245,0,144,0.5)] transition-all duration-300">
+              <User size={20} className="text-white" />
+            </div>
           </Link>
         </div> 
         </div>
