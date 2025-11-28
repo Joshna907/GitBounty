@@ -30,10 +30,14 @@ const SignIn = () => {
               Sign in with your GitHub account to start earning from verified open-source bounties.
             </p>
 
-            <button className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-[#f50090] to-[#9b23ea] text-white font-semibold py-3 rounded-full hover:opacity-90 transition-all duration-300">
-              <FaGithub className="text-3xl" />
-              Sign in with GitHub
-            </button>
+           <button
+  onClick={() => window.location.href = "http://localhost:5000/auth/github"}
+  className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-[#f50090] to-[#9b23ea] text-white font-semibold py-3 rounded-full hover:opacity-90 transition-all duration-300"
+>
+  <FaGithub className="text-3xl" />
+  Sign in with GitHub
+</button>
+
 
             <p className="text-gray-500 text-x mt-8">
               By continuing, you agree to our{" "}

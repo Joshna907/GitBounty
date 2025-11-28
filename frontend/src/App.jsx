@@ -13,6 +13,8 @@ import DashBoard from "./pages/DashBoard";
 import CreateBounty from "./pages/CreateBounty";
 import ClaimBountyByWinner from "./pages/ClaimBountyByWinner";
 import BountyDetails from "./pages/BountyDetails";
+import AuthSuccess from "./pages/AuthSuccess";
+
 function App() {
   return (
   <>
@@ -20,6 +22,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/sign-in" element={< SignIn/>} />
+      <Route path="/auth/success" element={<AuthSuccess />}/>
       <Route path="/explore" element={<ExploreBounty />} />
       <Route path="/dashboard" element={<DashBoard />} />
       <Route path="/create-bounty" element={<CreateBounty />} />
