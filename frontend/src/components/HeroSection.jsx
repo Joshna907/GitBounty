@@ -51,7 +51,7 @@ const HeroSection = () => {
              Create Bounty
             </Link>
             <Link
-              to="/browse-bounty"
+              to="/explore-bounty"
               className="px-8 py-4 border-2 border-white text-white rounded hover:bg-white/10 transition-colors text-lg font-semibold"
             >
               Browse Bounty

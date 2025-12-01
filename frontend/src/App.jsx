@@ -11,8 +11,16 @@ import SignIn from "./pages/SignIn";
 import ExploreBounty from "./pages/ExploreBounty";
 import DashBoard from "./pages/DashBoard";
 import CreateBounty from "./pages/CreateBounty";
-import ClaimBountyByWinner from "./pages/ClaimBountyByWinner";
+import ClaimBounty from "./pages/ClaimBounty";
+
 import BountyDetails from "./pages/BountyDetails";
+
+
+
+
+
+
+
 function App() {
   return (
   <>
@@ -24,8 +32,8 @@ function App() {
       <Route path="/dashboard" element={<DashBoard />} />
       <Route path="/create-bounty" element={<CreateBounty />} />
       <Route path="/explore-bounty" element={<ExploreBounty />} />
-      <Route path="/claim" element={<ClaimBountyByWinner />} />
-       <Route path="/bounty/:id" element={<BountyDetails />} />
+      <Route path="/claim" element={<ClaimBounty />} />
+      <Route path="/bounty/:id" element={<BountyDetails />} />
 
     </Routes>
     <AnnouncementSection/>

@@ -1,7 +1,7 @@
 import React from "react";
 import { FaCrown } from "react-icons/fa";
 
-const ClaimBountyByWinner = () => {
+const ClaimBounty = () => {
   return (
     <div className="min-h-screen bg-[#090909] text-white font-poppins">
       {/* ---- Hero Section ---- */}
@@ -37,12 +37,12 @@ const ClaimBountyByWinner = () => {
             className="bg-[#111] text-white border border-[#f50090]/40 rounded-md px-5 py-4 w-full text-lg placeholder-gray-500 outline-none focus:ring-2 focus:ring-[#f50090] transition"
           />
           <button
-  className="bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-10 py-3 
-             rounded-md text-lg font-semibold hover:opacity-90 
-             transition shadow-[0_0_20px_rgba(245,0,144,0.4)] 
-             whitespace-nowrap flex items-center justify-center gap-2">
-  Claim&nbsp;Bounty
-</button>
+                className="bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-10 py-3 
+                          rounded-md text-lg font-semibold hover:opacity-90 
+                          transition shadow-[0_0_20px_rgba(245,0,144,0.4)] 
+                          whitespace-nowrap flex items-center justify-center gap-2">
+                Claim&nbsp;Bounty
+          </button>
 
         </div>
 
@@ -66,4 +66,4 @@ const ClaimBountyByWinner = () => {
   );
 };
 
-export default ClaimBountyByWinner;
+export default ClaimBounty;

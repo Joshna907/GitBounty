@@ -1,108 +1,230 @@
 import React, { useState } from "react";
+import axios from "axios";
+import badges from "../badges/badges";
+import { Interface, parseEther } from "ethers";
+import { getSmartAccount } from "../gasless/smartAccount";
+import { CONTRACT_ADDRESS } from "../gasless/config";
 
-const CreateBounty = () => {
+export default function CreateBounty() {
   const [issueUrl, setIssueUrl] = useState("");
   const [rewardAmount, setRewardAmount] = useState("");
-  const [isToken, setIsToken] = useState(false);
   const [badgeURI, setBadgeURI] = useState("");
-  const [issueTitle, setIssueTitle] = useState("Issue Title (Fetched from GitHub)");
-  const [issueDescription, setIssueDescription] = useState(
-    "Here will appear the issue description fetched from GitHub once you import the issue."
-  );
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchIssueDetails = async () => {
+    const cleanUrl = issueUrl.trim();
+    if (!cleanUrl) return;
+
+    try {
+      const match = cleanUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/);
+      if (!match) return alert("❌ Invalid issue URL");
+
+      const [, owner, repo, issueNum] = match;
+      const githubRes = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${issueNum}`
+      );
+
+      setIssueTitle(githubRes.data.title || "No title");
+      setIssueDescription(githubRes.data.body || "No description");
+      console.log("✅ Issue fetched from GitHub:", githubRes.data.title);
+    } catch (err) {
+      console.error("GitHub fetch fail:", err.message);
+      alert("❌ GitHub issue fetch failed");
+    }
+  };
+
+  const handleCreateBounty = async () => {
+    if (!issueUrl.trim()) return alert("❌ Enter issue URL");
+    if (!rewardAmount || Number(rewardAmount) <= 0) return alert("❌ Enter valid ETH amount");
+    if (!badgeURI) return alert("❌ Select a badge");
+
+    setLoading(true);
+
+    try {
+      // 1️⃣ Connect MetaMask
+      const walletAccounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const eoa = walletAccounts[0];
+      console.log("✅ MetaMask connected:", eoa);
+
+      // 2️⃣ Check network
+      const chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if (chainId !== "0xaa36a7") {
+        alert("❌ Switch network in MetaMask to Ethereum Sepolia");
+        setLoading(false);
+        return;
+      }
+      console.log("✅ Connected to Ethereum Sepolia");
+
+      // 3️⃣ Initialize Smart Account
+      console.log("Initializing Biconomy...");
+      const smartAccount = await getSmartAccount({ usePaymaster: true });
+      if (!smartAccount) {
+        alert("❌ Smart account init failed — check bundler/paymaster");
+        setLoading(false);
+        return;
+      }
+      const sender = await smartAccount.getAccountAddress();
+      console.log("✅ Sender smart account:", sender);
+
+      // 4️⃣ Encode contract call
+      const abi = ["function createBounty(string,string) payable returns(uint256)"];
+      const bountyInterface = new Interface(abi);
+      const valueWei = parseEther(String(rewardAmount));
+      const callData = bountyInterface.encodeFunctionData("createBounty", [issueUrl, badgeURI]);
+      const tx = { to: CONTRACT_ADDRESS, data: callData, value: valueWei };
+
+      // 5️⃣ Dry-run
+      const provider = new (await import("ethers")).BrowserProvider(window.ethereum);
+      const signerForDryRun = await provider.getSigner();
+      try {
+        await signerForDryRun.call(tx);
+        console.log("✅ Dry-run ok");
+      } catch (dryErr) {
+        console.error("❌ Dry run fail:", dryErr.message);
+        alert("❌ Dry run reverted. Check issue URL or contract");
+        setLoading(false);
+        return;
+      }
+
+      // 6️⃣ Build UserOp safely
+      console.log("Building UserOp...");
+      let userOp;
+      try {
+        userOp = await smartAccount.buildUserOp([tx]);
+        if (!userOp) throw new Error("UserOp undefined from Bundler v3");
+
+        // 🔹 SAFELY set fallback gas
+        userOp.callGasLimit = userOp.callGasLimit ?? 600_000n;
+        userOp.verificationGasLimit = userOp.verificationGasLimit ?? 300_000n;
+        userOp.preVerificationGas = userOp.preVerificationGas ?? 80_000n;
+
+        // 🔹 Attach Paymaster safely
+        try {
+          const paymasterData = await smartAccount.getPaymasterAndData({ usePaymaster: true });
+          userOp.paymasterAndData = paymasterData ?? "0x";
+          console.log("✅ Paymaster data attached");
+        } catch (pmErr) {
+          console.warn("⚠️ Paymaster fetch failed, skipping", pmErr.message);
+          userOp.paymasterAndData = "0x";
+        }
+
+      } catch (opErr) {
+        console.error("❌ UserOp build fail:", opErr.message);
+
+        // 🔹 Fallback: normal on-chain transaction
+        const fallbackTx = await signerForDryRun.sendTransaction({
+          to: CONTRACT_ADDRESS,
+          data: tx.data,
+          value: valueWei
+        });
+        alert("Fallback on-chain tx sent: " + fallbackTx.hash);
+        setLoading(false);
+        return;
+      }
+
+      // 7️⃣ Send UserOp
+      console.log("Sending UserOp...");
+      const res = await smartAccount.sendUserOp(userOp);
+      console.log("🎉 UserOp sent:", res);
+      alert("✅ Transaction sent! Hash: " + (res.transactionHash || res.userOpHash));
+
+      // 8️⃣ Clear form
+      setIssueUrl("");
+      setRewardAmount("");
+      setBadgeURI("");
+
+      // 9️⃣ Optional: Save to backend
+      try {
+        await axios.post("http://localhost:2025/api/bounties/create-bounty", {
+          bountyId: res.userOpHash || "",
+          issueUrl,
+          rewardAmount,
+          rewardType: "ETH",
+          badgeURI,
+          creatorAddress: sender,
+          eoa
+        });
+        console.log("✅ Saved to backend");
+      } catch (backendErr) {
+        console.warn("⚠️ Backend save failed:", backendErr.message);
+      }
+
+    } catch (mainErr) {
+      console.error("❌ Unexpected:", mainErr.message);
+      alert("❌ Error: " + (mainErr.message || String(mainErr)));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="bg-black text-white min-h-screen py-20 px-6 relative overflow-hidden ">
-      <div className="max-w-7xl mx-auto text-center mt-12 ">
-        {/* Heading */}
-        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-[#f50090] to-[#9b23ea] bg-clip-text text-transparent">
-          Create a New Bounty
-        </h1>
-        <p className="text-gray-400 text-lg mb-16 max-w-7xl mx-auto mt-3">
-          Turn your GitHub issue into a blockchain bounty in seconds.<br />
-          Paste your GitHub issue URL below and see issue details before creating the bounty.
-        </p>
+    <div className="bg-black text-white min-h-screen py-20 px-6">
+      <div className="max-w-7xl mx-auto text-center">
+        <h1 className="text-5xl font-bold mb-8">Create New Git Bounty</h1>
 
-        {/* GitHub Issue URL + Import Button */}
-        <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-16">
+        <div className="flex gap-4 justify-center mb-10">
           <input
-            type="text"
             value={issueUrl}
             onChange={(e) => setIssueUrl(e.target.value)}
-            placeholder="Enter GitHub Issue URL"
-            className="w-full md:w-2/3 px-5 py-4 rounded-xl bg-[#111]/60 backdrop-blur-xl border border-[#f50090]/30 focus:border-[#f50090] outline-none text-gray-200 placeholder-gray-500 transition-all duration-300"
+            placeholder="GitHub issue link"
+            className="w-[60%] px-4 py-3 rounded-xl bg-[#111]/60 border border-cyan-500/30 text-white"
           />
-          <button className="text-xl bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-6 py-4 rounded-xl font-semibold shadow-[0_0_20px_rgba(245,0,144,0.4)] hover:opacity-90 transition-all">
-            Import Issue
+          <button
+            onClick={fetchIssueDetails}
+            className="px-5 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 transition"
+          >
+            Import
           </button>
         </div>
 
-        {/* Issue Info Section */}
-        <div className="max-w-7xl mx-auto bg-[#111]/60 backdrop-blur-xl rounded-2xl p-8 text-left mb-16 shadow-[0_0_30px_rgba(245,0,144,0.25)] border border-[#f50090]/30 max-w-4xl mx-auto">
-          <h2 className="text-3xl font-semibold mb-3 text-[#f50090]">
-            {issueTitle}
-          </h2>
-          <p className="text-gray-400">{issueDescription}</p>
-        </div>
+        {issueTitle && (
+          <div className="bg-[#111]/60 p-6 rounded-2xl w-[60%] mx-auto mb-10 text-left border border-cyan-500/30">
+            <h2 className="text-2xl font-semibold text-cyan-400">{issueTitle}</h2>
+            <p className="text-gray-400 mt-2 text-sm max-h-40 overflow-y-auto whitespace-pre-line">
+              {issueDescription}
+            </p>
+          </div>
+        )}
 
-        {/* Bounty Details Section */}
-        <div className="bg-[#111]/60 backdrop-blur-xl rounded-2xl p-8 text-left max-w-4xl mx-auto shadow-[0_0_30px_rgba(245,0,144,0.25)] border border-[#f50090]/30">
-          <h2 className="text-3xl font-bold mb-6 text-center bg-gradient-to-r from-[#f50090] to-[#9b23ea] bg-clip-text text-transparent">
-            Bounty Details
-          </h2>
+        <div className="border border-cyan-500/30 p-8 w-[60%] mx-auto rounded-2xl bg-[#111]/50">
+          <h2 className="text-3xl font-bold mb-6">Select Reward Badge</h2>
 
-          {/* Badge URI */}
-          <input
-            type="text"
-            value={badgeURI}
-            onChange={(e) => setBadgeURI(e.target.value)}
-            placeholder="Enter Badge URI (e.g., IPFS URL or Image Link)"
-            className="w-full mb-6 px-5 py-4 rounded-xl bg-[#111]/60 border border-[#f50090]/30 focus:border-[#f50090] outline-none text-gray-200 placeholder-gray-500 transition-all duration-300"
-          />
-
-          {/* Reward Type Toggle */}
-          <div className="flex items-center justify-between text-gray-400 text-xl mb-6">
-            <span>Reward Type:</span>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setIsToken(false)}
-                className={`px-6 py-3 rounded-lg border ${
-                  !isToken
-                    ? "bg-[#f50090]/40 border-[#f50090]"
-                    : "border-[#f50090]/30 hover:bg-[#f50090]/20"
-                } transition-all`}
+          <div className="grid grid-cols-4 gap-6 mb-6">
+            {badges.map((b, i) => (
+              <div
+                key={i}
+                onClick={() => setBadgeURI(b.url)}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  badgeURI === b.url ? "border-cyan-400 scale-105 bg-cyan-400/10" : "border-gray-700"
+                }`}
               >
-                ETH
-              </button>
-              <button
-                onClick={() => setIsToken(true)}
-                className={`px-6 py-3 rounded-lg border ${
-                  isToken
-                    ? "bg-[#9b23ea]/40 border-[#9b23ea]"
-                    : "border-[#9b23ea]/30 hover:bg-[#9b23ea]/20"
-                } transition-all`}
-              >
-                Token
-              </button>
-            </div>
+                <img src={b.url} className="w-14 h-14 mx-auto" alt={b.name} />
+                <p className="text-center mt-2 text-sm text-gray-300">{b.name}</p>
+              </div>
+            ))}
           </div>
 
-          {/* Reward Amount */}
           <input
             type="number"
             value={rewardAmount}
             onChange={(e) => setRewardAmount(e.target.value)}
-            placeholder="Enter Reward Amount"
-            className="w-full px-6 py-4 rounded-xl bg-[#111]/60 border border-[#f50090]/30 focus:border-[#f50090] outline-none text-gray-200 placeholder-gray-500 transition-all duration-300 mb-6"
+            placeholder="ETH amount"
+            className="w-full px-4 py-3 rounded-xl bg-[#000]/40 border border-cyan-500/30 text-white mb-4"
+            step="0.01"
+            min="0"
           />
 
-          {/* Create Bounty Button */}
-          <button className="bg-gradient-to-r from-[#f50090] to-[#9b23ea] px-9 py-4 rounded-xl font-semibold shadow-[0_0_20px_rgba(245,0,144,0.4)] hover:opacity-90 transition-all text-2xl w-full">
-            Create Bounty
+          <button
+            onClick={handleCreateBounty}
+            disabled={loading}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-xl font-semibold hover:opacity-90 disabled:opacity-50"
+          >
+            {loading ? "⏳ Creating..." : "🚀 Create Gasless Bounty"}
           </button>
         </div>
       </div>
     </div>
   );
-};
-
-export default CreateBounty;
+}

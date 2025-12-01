@@ -5,21 +5,30 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract GitBountyBadge is ERC721URIStorage, Ownable {
-    uint256 public nextTokenId;
+    uint256 private _nextTokenId = 1;
 
-    constructor() ERC721("GitBounty Badges", "GBB") Ownable(msg.sender) {
-        nextTokenId = 1;
-    }
+    constructor() ERC721("GitBounty Badges", "GBB") Ownable(msg.sender) {}
 
-    function mintBadge(address winner, string memory metadataURI)
+    event BadgeMinted(uint256 indexed tokenId, address indexed recipient, string uri);
+
+    function mintBadge(address recipient, string calldata uri)
         external
         onlyOwner
         returns (uint256)
     {
-        uint256 tokenId = nextTokenId;
-        _safeMint(winner, tokenId);
-        _setTokenURI(tokenId, metadataURI);
-        nextTokenId++;
+        require(recipient != address(0), "Invalid wallet address");
+        require(bytes(uri).length > 0, "URI cannot be empty");
+
+        uint256 tokenId = _nextTokenId;
+        _safeMint(recipient, tokenId);
+        _setTokenURI(tokenId, uri);
+        _nextTokenId++;
+
+        emit BadgeMinted(tokenId, recipient, uri);
         return tokenId;
+    }
+
+    function nextTokenId() external view returns (uint256) {
+        return _nextTokenId;
     }
 }

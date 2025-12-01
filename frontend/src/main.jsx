@@ -1,3 +1,11 @@
+import { Buffer } from "buffer";
+
+if (typeof window.process === "undefined") {
+  window.process = { env: {} };
+}
+window.Buffer = Buffer;
+
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from "react-router-dom";

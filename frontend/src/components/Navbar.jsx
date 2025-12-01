@@ -1,8 +1,25 @@
-import React from 'react'
+import React,{useState} from 'react'
 import { Link } from "react-router-dom"; 
 import { User } from 'lucide-react';
 
+
+
 const Navbar = () => {
+  const [walletAddress , setWalletAddress] = useState(false);
+
+  const connectWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        alert("MetaMask not found! Install MetaMask.");
+        return;
+      }
+
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      setWalletAddress(accounts[0]);
+    } catch (error) {
+      console.error("Wallet connection error:", error);
+    }
+  };
   return (
     <>
 {/* Navbar */}
@@ -48,6 +65,20 @@ const Navbar = () => {
             Sign in
             <span className="absolute bottom-[-4px] left-0 w-0 h-[2px] bg-[#f50090] transition-all duration-300 hover:w-full"></span>
           </Link>
+
+          {/* Connect Wallet Button */}
+              {walletAddress ? (
+                <div className="px-5 py-2 rounded-full bg-gradient-to-r from-[#f50090] to-[#9b23ea] text-white font-semibold shadow-lg shadow-[#f50090]/50 cursor-pointer text-sm">
+                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                </div>
+              ) : (
+                <button
+                  onClick={connectWallet}
+                  className="px-5 py-2 rounded-full bg-gradient-to-r from-[#f50090] to-[#9b23ea] text-white font-semibold shadow-lg shadow-[#f50090]/50 hover:scale-105 transition-transform duration-300"
+                >
+                  Connect Wallet
+                </button>
+              )}
 
           {/* Profile Icon */}
           <Link

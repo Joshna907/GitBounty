@@ -4,62 +4,34 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   console.log("🚀 Deploying contracts with:", deployer.address);
 
-
   // 1️⃣ Deploy Badge contract
-  const GitBountyBadges = await hre.ethers.getContractFactory("GitBountyBadge");
-  const badges = await GitBountyBadges.deploy();
-  await badges.waitForDeployment();
-  const badgeAddress = await badges.getAddress();
-  console.log("✅ GitBountyBadges deployed at:", badgeAddress);
+  const GitBountyBadgeFactory = await hre.ethers.getContractFactory("GitBountyBadge");
+  const badgeContract = await GitBountyBadgeFactory.deploy();
+  await badgeContract.waitForDeployment();
+  const badgeAddress = await badgeContract.getAddress();
+  console.log("✅ GitBountyBadge deployed at:", badgeAddress);
 
-  // 2️⃣ Deploy Token contract
-  const GitBountyToken = await hre.ethers.getContractFactory("GitBountyToken");
-  const token = await GitBountyToken.deploy();
-  await token.waitForDeployment();
-  const tokenAddress = await token.getAddress();
-  console.log("✅ GitBountyToken deployed at:", tokenAddress);
+  // 2️⃣ Deploy BountyDispenserGasless (ETH-only version)
+  // ❗ Only 1 parameter needed in constructor
+  const BountyFactory = await hre.ethers.getContractFactory("BountyDispenserGasless");
+  const bountyContract = await BountyFactory.deploy(badgeAddress);
 
+  await bountyContract.waitForDeployment();
+  const bountyAddress = await bountyContract.getAddress();
+  console.log("✅ BountyDispenserGasless deployed at:", bountyAddress);
 
-  // 3️⃣ Deploy Main BountyDispenserGasless contract
-  const BountyDispenserGasless = await hre.ethers.getContractFactory("BountyDispenserGasless");
-  const dispenser = await BountyDispenserGasless.deploy(
-    deployer.address,                              // admin
-    "0x0000000000000000000000000000000000000000", // trusted forwarder (for now)
-    badgeAddress,                                 // badge address
-    tokenAddress                                  // token address
-  );
-  await dispenser.waitForDeployment();
-  const dispenserAddress = await dispenser.getAddress();
-  console.log("✅ BountyDispenserGasless deployed at:", dispenserAddress);
+  // 3️⃣ Transfer Badge contract ownership → to bounty contract
+  const tx = await badgeContract.transferOwnership(bountyAddress);
+  await tx.wait();
+  console.log("🔑 Badge ownership transferred to:", bountyAddress);
 
-  // 4️⃣ Transfer ownership of Badge contract to main contract
-  const transferTx = await badges.transferOwnership(dispenserAddress);
-  await transferTx.wait();
-  console.log("🔑 Ownership of GitBountyBadges transferred to:", dispenserAddress);
-
-  // 5️⃣ Mint some tokens to the admin/deployer
-  const mintAmount = hre.ethers.parseUnits("10000", 18);
-  const mintTx = await token.mint(deployer.address, mintAmount);
-  await mintTx.wait();
-  console.log(`💰 Minted ${hre.ethers.formatUnits(mintAmount, 18)} tokens to admin.`);
-
-
-  // 6️⃣ Approve the main contract to spend tokens
-  const approveAmount = hre.ethers.parseUnits("5000", 18);
-  const approveTx = await token.approve(dispenserAddress, approveAmount);
-  await approveTx.wait();
-  console.log(`✅ Approved ${hre.ethers.formatUnits(approveAmount, 18)} tokens for the main contract.`);
-
-
-  // ✅ Done
-  console.log("\n🎉 All contracts deployed and configured successfully!");
+  console.log("\n🎉 Deployment complete!");
   console.log("GitBountyBadge:", badgeAddress);
-  console.log("GitBountyToken:", tokenAddress);
-  console.log("BountyDispenserGasless:", dispenserAddress);
+  console.log("BountyDispenserGasless:", bountyAddress);
 }
 
-main().catch((error) => {
-  console.error(error);
+// Run
+main().catch((err) => {
+  console.error(err);
   process.exitCode = 1;
-}); 
-
+});

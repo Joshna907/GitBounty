@@ -1,171 +1,199 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./GitBountyBadge.sol";
 
-contract BountyDispenserGasless is ERC2771Context {
+contract BountyDispenserGasless is ReentrancyGuard {
+
+
+    struct Claim {
+        address claimant;
+        string proofLink;
+        bool approved;
+    }
+
     struct Bounty {
         uint256 id;
         address creator;
-        uint256 rewardAmount;
+        uint256 rewardAmount; // ETH locked for bounty
         string githubIssueUrl;
         bool isOpen;
-        address winner;
-        bool isTokenReward;
-        string badgeURI; 
+        string badgeURI;
+        address winner; // Winner address stored
     }
 
     mapping(uint256 => Bounty) public bounties;
+    mapping(uint256 => Claim[]) private bountyClaims;
+
     uint256 public nextBountyId = 1;
-
-    IERC20 public rewardToken;
     GitBountyBadge public badgeNFT;
-    address public admin;
 
-    event BountyCreated(uint256 id, address creator, uint256 reward, bool isToken, string issueUrl, string badgeURI);
-    event WinnerSet(uint256 id, address winner);
-    event BountyClaimed(uint256 id, address winner, uint256 reward);
-    event BountyClosed(uint256 id, address closedBy);
-    event AdminChanged(address oldAdmin, address newAdmin);
+    // Events
+    event BountyCreated(uint256 indexed id, address indexed creator, uint256 reward);
+    event ProofSubmitted(uint256 indexed id, address indexed developer, string proof);
+    event BountyApproved(uint256 indexed id, address indexed developer, uint256 reward, string message);
+    event BountyRejected(uint256 indexed id, address indexed developer, string message);
+    event BountyClosed(uint256 indexed id, string message);
 
-    constructor(address _trustedForwarder, address _token, address _badges, address _admin)
-        ERC2771Context(_trustedForwarder)
-    {
-        admin = _admin;
-        rewardToken = IERC20(_token);
-        badgeNFT = GitBountyBadge(_badges);
-    }
-
-    modifier onlyAdmin() {
-        require(_msgSender() == admin, "Not authorized: admin only");
+    modifier onlyCreator(uint256 _id) {
+        require(bounties[_id].creator != address(0), "Bounty not found");
+        require(msg.sender == bounties[_id].creator, "Only creator allowed");
         _;
     }
 
-    // Admin transfer
-    function setAdmin(address _newAdmin) external onlyAdmin {
-        require(_newAdmin != address(0), "Invalid address");
-        emit AdminChanged(admin, _newAdmin);
-        admin = _newAdmin;
-    }
-
-    // ✅ Create a new bounty (now includes badge URI)
-   function createBounty(
-    string memory _issueUrl,
-    uint256 _tokenAmount,
-    bool _isToken,
-    string memory _badgeURI
-) external payable {
-    if (_isToken) {
-        require(_tokenAmount > 0, "Token amount must be > 0");
-        
-        // ✅ Check if creator has enough tokens
-        uint256 creatorBalance = rewardToken.balanceOf(_msgSender());
-        require(creatorBalance >= _tokenAmount, "Insufficient token balance to create bounty");
-        
-        // ✅ Check allowance
-        uint256 allowance = rewardToken.allowance(_msgSender(), address(this));
-        require(allowance >= _tokenAmount, "Approve tokens before creating bounty");
-
-        // ✅ Transfer tokens from creator to contract
-        rewardToken.transferFrom(_msgSender(), address(this), _tokenAmount);
-    } else {
-        require(msg.value > 0, "ETH reward must be > 0");
-    }
-
-    bounties[nextBountyId] = Bounty({
-        id: nextBountyId,
-        creator: _msgSender(),
-        rewardAmount: _isToken ? _tokenAmount : msg.value,
-        githubIssueUrl: _issueUrl,
-        isOpen: true,
-        winner: address(0),
-        isTokenReward: _isToken,
-        badgeURI: _badgeURI
-    });
-
-    emit BountyCreated(nextBountyId, _msgSender(), _isToken ? _tokenAmount : msg.value, _isToken, _issueUrl, _badgeURI);
-    nextBountyId++;
+ constructor(address badgeAddress) {
+    require(badgeAddress != address(0), "Badge contract required");
+    badgeNFT = GitBountyBadge(badgeAddress);
 }
 
 
-    // Set bounty winner (by admin or bounty creator)
-    function setWinner(uint256 _id, address _winner) external {
-        Bounty storage bounty = bounties[_id];
-        require(bounty.isOpen, "Already closed");
-        require(_msgSender() == bounty.creator, "Only creator set winner");
-        bounty.winner = _winner;
-        emit WinnerSet(_id, _winner);
+    // ✅ Create bounty with ETH deposit
+    function createBounty(string calldata issueUrl, string calldata _badgeURI)
+        external
+        payable
+        returns (uint256)
+    {
+        require(msg.value > 0, "Deposit ETH reward");
+        require(bytes(issueUrl).length > 0, "Issue URL required");
+        require(bytes(_badgeURI).length > 0, "Badge URI required");
+
+        uint256 id = nextBountyId;
+        Bounty storage b = bounties[id];
+
+        b.id = id;
+        b.creator = msg.sender;
+        b.rewardAmount = msg.value;
+        b.githubIssueUrl = issueUrl;
+        b.isOpen = true;
+        b.badgeURI = _badgeURI;
+        b.winner = address(0); // default no winner
+
+        emit BountyCreated(id, msg.sender, msg.value);
+        nextBountyId++;
+        return id;
     }
 
-    // ✅ Winner claims bounty (no need to provide badge URI)
-    function claimBounty(uint256 _id) external {
-        Bounty storage bounty = bounties[_id];
-        require(bounty.isOpen, "Bounty closed");
-        require(_msgSender() == bounty.winner, "Not authorized: not winner");
+    // ✅ Submit proof for bounty
+    function claimBounty(uint256 _id, string calldata _proof) external {
+        Bounty storage b = bounties[_id];
+        require(b.creator != address(0), "Bounty not found");
+        require(b.isOpen, "Bounty closed");
+        require(msg.sender != b.creator, "Creator cannot claim own bounty");
+        require(bytes(_proof).length > 0, "Proof required");
+        require(b.rewardAmount > 0, "No reward locked");
 
-        bounty.isOpen = false;
+        Claim[] storage claims = bountyClaims[_id];
 
-        if (bounty.isTokenReward) {
-            rewardToken.transfer(_msgSender(), bounty.rewardAmount);
-        } else {
-            (bool success, ) = payable(_msgSender()).call{value: bounty.rewardAmount}("");
-            require(success, "ETH transfer failed");
+        // Update existing claim if pending
+        for (uint i = 0; i < claims.length; i++) {
+            if (claims[i].claimant == msg.sender && !claims[i].approved) {
+                claims[i].proofLink = _proof;
+                emit ProofSubmitted(_id, msg.sender, _proof);
+                return;
+            }
         }
 
-        // ✅ Use stored URI from bounty
-        badgeNFT.mintBadge(_msgSender(), bounty.badgeURI);
+        // Create new claim
+        claims.push(Claim({
+            claimant: msg.sender,
+            proofLink: _proof,
+            approved: false
+        }));
 
-        emit BountyClaimed(_id, _msgSender(), bounty.rewardAmount);
+        emit ProofSubmitted(_id, msg.sender, _proof);
     }
 
-    // Creator or Admin can close bounty and refund reward
-    function closeBounty(uint256 _id) external {
-        Bounty storage bounty = bounties[_id];
-        require(bounty.isOpen, "Already closed");
-        require(_msgSender() == bounty.creator, "Only creator Close Bounty");
-        require(bounty.winner == address(0), "Cannot close: winner already set");
+    // ✅ Creator approves or rejects claim
+    function handleClaim(
+        uint256 _id,
+        address claimant,
+        bool approve,
+        string calldata msgForDev
+    ) external onlyCreator(_id) nonReentrant {
 
-        bounty.isOpen = false;
+        Bounty storage b = bounties[_id];
+        Claim[] storage claims = bountyClaims[_id];
+        require(b.rewardAmount > 0, "No ETH locked");
+        require(b.isOpen, "Bounty already closed");
 
-        if (bounty.isTokenReward) {
-            rewardToken.transfer(bounty.creator, bounty.rewardAmount);
-        } else {
-            (bool success, ) = payable(bounty.creator).call{value: bounty.rewardAmount}("");
-            require(success, "Refund failed");
+        bool found = false;
+
+        for (uint i = 0; i < claims.length; i++) {
+            if (claims[i].claimant == claimant && !claims[i].approved) {
+                found = true;
+                Claim storage c = claims[i];
+
+                if (approve) {
+                    uint256 reward = b.rewardAmount;
+                    b.rewardAmount = 0;
+                    c.approved = true;
+                    b.isOpen = false;
+                    b.winner = claimant; // store winner
+
+                    (bool sent, ) = payable(claimant).call{value: reward}("");
+                    require(sent, "ETH transfer failed");
+
+                    badgeNFT.mintBadge(claimant, b.badgeURI);
+
+                    emit BountyApproved(_id, claimant, reward, msgForDev);
+                } else {
+                    // Reject claim (swap+pop)
+                    claims[i] = claims[claims.length - 1];
+                    claims.pop();
+                    emit BountyRejected(_id, claimant, msgForDev);
+                }
+
+                break;
+            }
         }
 
-        emit BountyClosed(_id, _msgSender());
+        require(found, "Pending claim not found");
     }
 
-    // Get full bounty details
-    function getBounty(uint256 _id)
+    // ✅ Close bounty and refund ETH
+    function closeBounty(uint256 _id) external onlyCreator(_id) nonReentrant {
+        Bounty storage b = bounties[_id];
+        require(b.isOpen, "Already closed");
+        require(b.rewardAmount > 0, "No ETH to refund");
+
+        uint256 refund = b.rewardAmount;
+        b.rewardAmount = 0;
+        b.isOpen = false;
+
+        (bool refunded, ) = payable(msg.sender).call{value: refund}("");
+        require(refunded, "Refund failed");
+
+        emit BountyClosed(_id, "Closed by creator, ETH refunded");
+    }
+
+    // ✅ Get bounty details including all claims and winner
+    function getBountyWithClaims(uint256 _id)
         external
         view
         returns (
             uint256 id,
             address creator,
-            uint256 rewardAmount,
-            string memory githubIssueUrl,
-            bool isOpen,
+            uint256 reward,
+            string memory issueUrl,
+            bool open,
+            string memory badgeURI,
             address winner,
-            bool isTokenReward,
-            string memory badgeURI
+            Claim[] memory allClaims
         )
     {
-        Bounty memory b = bounties[_id];
-        return (b.id, b.creator, b.rewardAmount, b.githubIssueUrl, b.isOpen, b.winner, b.isTokenReward, b.badgeURI);
+        Bounty storage b = bounties[_id];
+
+        Claim[] storage claims = bountyClaims[_id];
+        Claim[] memory memClaims = new Claim[](claims.length);
+
+        for (uint i = 0; i < claims.length; i++) {
+            memClaims[i] = claims[i];
+        }
+
+        return (b.id, b.creator, b.rewardAmount, b.githubIssueUrl, b.isOpen, b.badgeURI, b.winner, memClaims);
     }
 
-    // Meta TX overrides
-    function _msgSender() internal view override(ERC2771Context) returns (address) {
-        return ERC2771Context._msgSender();
-    }
-
-    function _msgData() internal view override(ERC2771Context) returns (bytes calldata) {
-        return ERC2771Context._msgData();
-    }
-
+   
     receive() external payable {}
 }

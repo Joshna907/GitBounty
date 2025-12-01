@@ -4,7 +4,6 @@ import FeaturesSection from '../components/FeaturesSection';
 import Testimonials from '../components/Testimonials.jsx';
 import VisionSection from '../components/VisionSection.jsx';
 import AnnouncementSection from '../components/AnnouncementSection.jsx';
-import ClaimBounty from '../components/ClaimBounty.jsx';
 
 const Home = () => {
   return (
@@ -13,9 +12,7 @@ const Home = () => {
         <HeroSection />
       </section>
 
-      <section>
-        <ClaimBounty/>
-        </section>
+      
        
       <section className="py-10">
         <FeaturesSection />
