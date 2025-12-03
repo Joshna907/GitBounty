@@ -11,6 +11,7 @@ const config = {
       accounts: [process.env.PRIVATE_KEY],
     },
   },
+  
 };
 
 export default config;

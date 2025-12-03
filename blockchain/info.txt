@@ -134,3 +134,996 @@ Would you like me to now add your exact 3 c
 
 
 bicoconomy ul updated so not neet to go dashaborad to reg
+
+
+>>>creatbounty.jsx
+import React, { useState } from "react";
+import axios from "axios";
+import badges from "../badges/badges";
+import { Interface, parseEther, toUtf8String } from "ethers";
+import { getSmartAccount } from "../gasless/smartAccount";
+import { CONTRACT_ADDRESS } from "../gasless/config";
+
+export default function CreateBounty() {
+  const [issueUrl, setIssueUrl] = useState("");
+  const [rewardAmount, setRewardAmount] = useState("");
+  const [badgeURI, setBadgeURI] = useState("");
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchIssueDetails = async () => {
+    const cleanUrl = issueUrl.trim();
+    if (!cleanUrl) return;
+
+    try {
+      const match = cleanUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/);
+      if (!match) return alert("❌ Invalid GitHub issue URL format");
+
+      const [, owner, repo, issueNum] = match;
+      const githubRes = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${issueNum}`
+      );
+
+      if (githubRes.status !== 200) throw new Error("GitHub issue not found");
+
+      setIssueTitle(githubRes.data.title || "No title");
+      setIssueDescription(githubRes.data.body || "No description");
+      console.log("✅ GitHub issue fetched:", githubRes.data.title);
+    } catch (err) {
+      console.error("GitHub fetch error:", err);
+      alert("❌ Failed to fetch GitHub issue. Check URL and try again.");
+    }
+  };
+
+  const handleCreateBounty = async () => {
+    if (!issueUrl.trim()) return alert("❌ Please enter a GitHub issue URL");
+    if (!rewardAmount || Number(rewardAmount) <= 0)
+      return alert("❌ Please enter a valid reward amount");
+    if (!badgeURI) return alert("❌ Please select a badge");
+
+    setLoading(true);
+
+    try {
+      console.log("Step 1: Connecting to MetaMask...");
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      console.log("✅ MetaMask connected. Account:", accounts[0]);
+
+      console.log("Step 2: Checking network...");
+      const chainId = await window.ethereum.request({ method: "eth_chainId" });
+      console.log("Current Chain ID:", chainId);
+
+      if (chainId !== "0xaa36a7") {
+        alert("❌ Please switch to Sepolia testnet (Chain ID: 11155111)");
+        setLoading(false);
+        return;
+      }
+
+      console.log("✅ Connected to Sepolia");
+
+      console.log("Step 3: Initializing smart account...");
+      const smartAccount = await getSmartAccount();
+      if (!smartAccount) {
+        alert("❌ Failed to initialize smart account. Check config and try again.");
+        setLoading(false);
+        return;
+      }
+
+      const creatorAddress = await smartAccount.getAccountAddress();
+      console.log("✅ Smart Account Address:", creatorAddress);
+
+      console.log("Step 4: Encoding function call...");
+      const abi = ["function createBounty(string,string) payable returns (uint256)"];
+      const bountyInterface = new Interface(abi);
+      const valueWei = parseEther(String(rewardAmount)); // bigint
+      const callData = bountyInterface.encodeFunctionData("createBounty", [issueUrl, badgeURI]);
+      console.log("✅ Function encoded (matches contract):", callData);
+
+      const tx = { to: CONTRACT_ADDRESS, data: callData, value: valueWei };
+      console.log("✅ Transaction object:", tx);
+
+      console.log("Step 5: Dry Run call...");
+      try {
+        const signer = new (await import("ethers")).BrowserProvider(window.ethereum).getSigner();
+        await (await signer).call(tx);
+        console.log("✅ Dry run successful – no revert");
+      } catch (dryErr) {
+        const data = dryErr?.data;
+        if (data) {
+          try {
+            if (data.slice(2, 10) === "08c379a0") {
+              const reason = toUtf8String("0x" + data.slice(138));
+              console.error("Decoded revert reason:", reason);
+              alert("Dry-run revert reason: " + reason);
+            } else {
+              console.error("Revert data (hex):", data);
+            }
+          } catch (e) {
+            console.error("Failed to decode revert data:", e);
+          }
+        } else {
+          alert("Dry-run reverted: " + (dryErr?.message || dryErr));
+        }
+        setLoading(false);
+        return;
+      }
+
+      console.log("Step 6: Building UserOp...");
+      let userOp;
+      try {
+        userOp = await smartAccount.buildUserOp([tx]);
+        console.log("✅ UserOp built successfully");
+      } catch (buildErr) {
+        console.error("❌ buildUserOp failed:", buildErr);
+
+        try {
+          console.log("⚠️ Falling back to direct on-chain transaction via signer...");
+          const provider = new (await import("ethers")).BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const txResponse = await signer.sendTransaction({
+            to: tx.to,
+            data: tx.data,
+            value: tx.value,
+          });
+          console.log("✅ Fallback tx sent:", txResponse.hash);
+          alert("Fallback on-chain tx sent: " + txResponse.hash);
+          setLoading(false);
+          return;
+        } catch (fallbackErr) {
+          console.error("❌ Fallback tx failed:", fallbackErr);
+          alert("Failed to build gasless UserOp and fallback on-chain tx failed. See console.");
+          setLoading(false);
+          return;
+        }
+      }
+
+      console.log("UserOp details:", {
+        sender: userOp.sender,
+        nonce: userOp.nonce?.toString(),
+        callGasLimit: userOp.callGasLimit?.toString(),
+        verificationGasLimit: userOp.verificationGasLimit?.toString(),
+        preVerificationGas: userOp.preVerificationGas?.toString(),
+      });
+
+      if (!userOp.callGasLimit) userOp.callGasLimit = 500000n;
+      if (!userOp.verificationGasLimit) userOp.verificationGasLimit = 200000n;
+      if (!userOp.preVerificationGas) userOp.preVerificationGas = 50000n;
+
+      console.log("✅ Final UserOp:", userOp);
+
+      console.log("Step 8: Sending UserOp with SPONSORED paymaster...");
+      let res;
+      try {
+        res = await smartAccount.sendUserOp(userOp, {
+          paymasterServiceData: { mode: "SPONSORED" },
+        });
+      } catch (sendErr) {
+        console.error("❌ sendUserOp failed:", sendErr);
+        alert("❌ Failed to send UserOp: " + (sendErr?.message || sendErr));
+        setLoading(false);
+        return;
+      }
+
+      console.log("✅ Gasless response:", res);
+      const txHash = res?.transactionHash || res?.hash || res?.userOpHash || "pending";
+      console.log("✅ Transaction hash:", txHash);
+      alert(`🎉 Bounty created gaslessly!\nTx: ${txHash}`);
+
+      setIssueUrl("");
+      setRewardAmount("");
+      setBadgeURI("");
+      setIssueTitle("");
+      setIssueDescription("");
+
+      try {
+        await axios.post("http://localhost:2025/api/bounties/create-bounty", {
+          bountyId: txHash,
+          issueUrl,
+          rewardAmount,
+          rewardType: "ETH",
+          badgeURI,
+          creatorAddress,
+        });
+        console.log("✅ Saved to backend");
+      } catch (backendErr) {
+        console.log("⚠️ Backend save failed (optional):", backendErr?.message);
+      }
+    } catch (err) {
+      console.error("❌ Unexpected error:", err);
+      alert("❌ Error: " + (err?.reason || err?.message || String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-black text-white min-h-screen py-20 px-6">
+      <div className="max-w-7xl mx-auto text-center">
+        <h1 className="text-5xl font-bold mb-8">Create New Bounty</h1>
+
+        <div className="flex gap-4 justify-center mb-10">
+          <input
+            value={issueUrl}
+            onChange={(e) => setIssueUrl(e.target.value)}
+            placeholder="e.g., https://github.com/owner/repo/issues/1"
+            className="w-[60%] px-4 py-3 rounded-xl bg-[#111]/60 border border-pink-500/30 text-white placeholder-gray-500 focus:outline-none focus:border-pink-500"
+          />
+          <button
+            onClick={fetchIssueDetails}
+            className="px-5 py-3 rounded-xl bg-pink-600 hover:bg-pink-700 transition-colors"
+          >
+            Import
+          </button>
+        </div>
+
+        {issueTitle && (
+          <div className="bg-[#111]/60 p-6 rounded-2xl w-[60%] mx-auto mb-10 text-left border border-pink-500/30">
+            <h2 className="text-2xl font-semibold text-pink-500">{issueTitle}</h2>
+            <p className="text-gray-400 mt-2 whitespace-pre-line text-sm max-h-48 overflow-y-auto">
+              {issueDescription}
+            </p>
+          </div>
+        )}
+
+        <div className="bg-[#111]/60 rounded-2xl p-8 w-[60%] mx-auto border border-pink-500/30">
+          <h2 className="text-3xl font-bold mb-6">Select Badge</h2>
+
+          <div className="grid grid-cols-4 gap-6 mb-6">
+            {badges.map((b, i) => (
+              <div
+                key={i}
+                onClick={() => setBadgeURI(b.url)}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  badgeURI === b.url
+                    ? "border-pink-500 scale-105 bg-pink-500/10 shadow-lg shadow-pink-500/20"
+                    : "border-gray-700 hover:border-pink-400"
+                }`}
+              >
+                <img src={b.url} className="w-14 h-14 mx-auto" alt={b.name} />
+                <p className="text-center mt-2 text-sm text-gray-300">{b.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <input
+            type="number"
+            value={rewardAmount}
+            onChange={(e) => setRewardAmount(e.target.value)}
+            placeholder="Reward ETH Amount (e.g., 0.1)"
+            className="w-full px-4 py-3 rounded-xl bg-[#000]/40 border border-pink-500/30 text-white placeholder-gray-500 mb-4 focus:outline-none focus:border-pink-500"
+            step="0.01"
+            min="0"
+          />
+
+          <button
+            onClick={handleCreateBounty}
+            disabled={loading}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-xl font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          >
+            {loading ? "⏳ Creating Bounty..." : "🚀 Create Bounty Gaslessly"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+//gaslessbounty.js
+import { BUNDLER_URL, PAYMASTER_URL } from "./config";
+
+export const getSmartAccount = async ({ usePaymaster = true } = {}) => {
+  if (!window.ethereum) {
+    console.error("❌ MetaMask not detected");
+    return null;
+  }
+
+  try {
+    const { ethers } = await import("ethers");
+    const { BiconomySmartAccountV2 } = await import("@biconomy/account");
+    const { BiconomyPaymaster } = await import("@biconomy/paymaster");
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    console.log("✅ Signer acquired:", await signer.getAddress());
+
+    // BUNDLER health check
+    try {
+      console.log("Testing BUNDLER_URL:", BUNDLER_URL);
+      const resp = await fetch(BUNDLER_URL, { method: "GET" });
+      console.log("Bundler health status:", resp.status);
+
+      const body = await resp.text();
+      console.log("Bundler response (trim):", (body || "").slice(0, 500));
+
+      if (!resp.ok) {
+        console.warn(
+          "Bundler returned non-OK status. Check BUNDLER_URL and key on Biconomy dashboard."
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "Bundler fetch error (network/CORS). Check bundler URL and CORS settings.",
+        e
+      );
+    }
+
+    // PAYMASTER health check (optional)
+    let paymaster;
+    if (usePaymaster && PAYMASTER_URL) {
+      try {
+        console.log("Testing PAYMASTER_URL:", PAYMASTER_URL);
+        const resp = await fetch(PAYMASTER_URL, { method: "GET" });
+        console.log("Paymaster health status:", resp.status);
+
+        const text = await resp.text();
+        console.log("Paymaster response (trim):", (text || "").slice(0, 500));
+
+        if (resp.ok) {
+          paymaster = new BiconomyPaymaster({ paymasterUrl: PAYMASTER_URL });
+        } else {
+          console.warn("Paymaster returned non-OK; disabling paymaster for this session.");
+          usePaymaster = false;
+        }
+      } catch (e) {
+        console.warn("Paymaster fetch error (network/CORS). Disabling paymaster.", e);
+        usePaymaster = false;
+      }
+    }
+
+    console.log("Creating BiconomySmartAccountV2 (usePaymaster=", usePaymaster, ")");
+
+    const smartAccount = await BiconomySmartAccountV2.create({
+      signer,
+      bundlerUrl: BUNDLER_URL,
+      paymaster: paymaster,
+      chainId: 11155111
+    });
+
+    const accountAddress = await smartAccount.getAccountAddress();
+    console.log("✅ Smart Account Ready:", accountAddress);
+
+    return smartAccount;
+
+  } catch (error) {
+    console.error("❌ Smart Account Init Error:", error);
+
+    alert(
+      "Smart account init failed: " +
+      (error?.message || error)
+    );
+
+    return null;
+  }
+};
+
+//config
+export const CONTRACT_ADDRESS = "0xb27A99E4f86fd3342f213Ff41582b16Fa686A154";
+
+export const BUNDLER_URL = "https://bundler.biconomy.io/api/v3/11155111/bundler_WkMKUhdEAhbgaaPkJHuAB5";
+
+export const PAYMASTER_URL = "https://paymaster.biconomy.io/api/v2/11155111/UOeBu1gX3.96675185-9413-4efa-a501-882be6d6d382";
+
+export const PAYMASTER_KEY = "UOeBu1gX3.96675185-9413-4efa-a501-882be6d6d382";
+
+
+//creatbounty
+import React, { useState } from "react";
+import axios from "axios";
+import badges from "../badges/badges";
+import { Interface, parseEther } from "ethers";
+import { getSmartAccount } from "../gasless/smartAccount";
+import { CONTRACT_ADDRESS } from "../gasless/config";
+
+export default function CreateBounty() {
+  const [issueUrl, setIssueUrl] = useState("");
+  const [rewardAmount, setRewardAmount] = useState("");
+  const [badgeURI, setBadgeURI] = useState("");
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchIssueDetails = async () => {
+    const cleanUrl = issueUrl.trim();
+    if (!cleanUrl) return;
+
+    try {
+      const match = cleanUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/);
+      if (!match) return alert("❌ Invalid issue URL");
+
+      const [, owner, repo, issueNum] = match;
+      const githubRes = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${issueNum}`
+      );
+
+      setIssueTitle(githubRes.data.title || "No title");
+      setIssueDescription(githubRes.data.body || "No description");
+      console.log("✅ Issue fetched from GitHub:", githubRes.data.title);
+    } catch (err) {
+      console.error("GitHub fetch fail:", err.message);
+      alert("❌ GitHub issue fetch failed");
+    }
+  };
+
+  const handleCreateBounty = async () => {
+    if (!issueUrl.trim()) return alert("❌ Enter issue URL");
+    if (!rewardAmount || Number(rewardAmount) <= 0) return alert("❌ Enter valid ETH amount");
+    if (!badgeURI) return alert("❌ Select a badge");
+
+    setLoading(true);
+
+    try {
+      // 1️⃣ Connect MetaMask
+      const walletAccounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const eoa = walletAccounts[0];
+      console.log("✅ MetaMask connected:", eoa);
+
+      // 2️⃣ Check network
+      const chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if (chainId !== "0xaa36a7") {
+        alert("❌ Switch network in MetaMask to Ethereum Sepolia");
+        setLoading(false);
+        return;
+      }
+      console.log("✅ Connected to Ethereum Sepolia");
+
+      // 3️⃣ Initialize Smart Account
+      console.log("Initializing Biconomy...");
+      const smartAccount = await getSmartAccount({ usePaymaster: true });
+      if (!smartAccount) {
+        alert("❌ Smart account init failed — check bundler/paymaster");
+        setLoading(false);
+        return;
+      }
+      const sender = await smartAccount.getAccountAddress();
+      console.log("✅ Sender smart account:", sender);
+
+      // 4️⃣ Encode contract call
+      const abi = ["function createBounty(string,string) payable returns(uint256)"];
+      const bountyInterface = new Interface(abi);
+      const valueWei = parseEther(String(rewardAmount));
+      const callData = bountyInterface.encodeFunctionData("createBounty", [issueUrl, badgeURI]);
+      const tx = { to: CONTRACT_ADDRESS, data: callData, value: valueWei };
+
+      // 5️⃣ Dry-run
+      const provider = new (await import("ethers")).BrowserProvider(window.ethereum);
+      const signerForDryRun = await provider.getSigner();
+      try {
+        await signerForDryRun.call(tx);
+        console.log("✅ Dry-run ok");
+      } catch (dryErr) {
+        console.error("❌ Dry run fail:", dryErr.message);
+        alert("❌ Dry run reverted. Check issue URL or contract");
+        setLoading(false);
+        return;
+      }
+
+      // 6️⃣ Build UserOp safely
+      console.log("Building UserOp...");
+      let userOp;
+      try {
+        userOp = await smartAccount.buildUserOp([tx]);
+        if (!userOp) throw new Error("UserOp undefined from Bundler v3");
+
+        // 🔹 SAFELY set fallback gas
+        userOp.callGasLimit = userOp.callGasLimit ?? 600_000n;
+        userOp.verificationGasLimit = userOp.verificationGasLimit ?? 300_000n;
+        userOp.preVerificationGas = userOp.preVerificationGas ?? 80_000n;
+
+        // 🔹 Attach Paymaster safely
+        try {
+          const paymasterData = await smartAccount.getPaymasterAndData({ usePaymaster: true });
+          userOp.paymasterAndData = paymasterData ?? "0x";
+          console.log("✅ Paymaster data attached");
+        } catch (pmErr) {
+          console.warn("⚠️ Paymaster fetch failed, skipping", pmErr.message);
+          userOp.paymasterAndData = "0x";
+        }
+
+      } catch (opErr) {
+        console.error("❌ UserOp build fail:", opErr.message);
+
+        // 🔹 Fallback: normal on-chain transaction
+        const fallbackTx = await signerForDryRun.sendTransaction({
+          to: CONTRACT_ADDRESS,
+          data: tx.data,
+          value: valueWei
+        });
+        alert("Fallback on-chain tx sent: " + fallbackTx.hash);
+        setLoading(false);
+        return;
+      }
+
+      // 7️⃣ Send UserOp
+      console.log("Sending UserOp...");
+      const res = await smartAccount.sendUserOp(userOp);
+      console.log("🎉 UserOp sent:", res);
+      alert("✅ Transaction sent! Hash: " + (res.transactionHash || res.userOpHash));
+
+      // 8️⃣ Clear form
+      setIssueUrl("");
+      setRewardAmount("");
+      setBadgeURI("");
+
+      // 9️⃣ Optional: Save to backend
+      try {
+        await axios.post("http://localhost:2025/api/bounties/create-bounty", {
+          bountyId: res.userOpHash || "",
+          issueUrl,
+          rewardAmount,
+          rewardType: "ETH",
+          badgeURI,
+          creatorAddress: sender,
+          eoa
+        });
+        console.log("✅ Saved to backend");
+      } catch (backendErr) {
+        console.warn("⚠️ Backend save failed:", backendErr.message);
+      }
+
+    } catch (mainErr) {
+      console.error("❌ Unexpected:", mainErr.message);
+      alert("❌ Error: " + (mainErr.message || String(mainErr)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-black text-white min-h-screen py-20 px-6">
+      <div className="max-w-7xl mx-auto text-center">
+        <h1 className="text-5xl font-bold mb-8">Create New Git Bounty</h1>
+
+        <div className="flex gap-4 justify-center mb-10">
+          <input
+            value={issueUrl}
+            onChange={(e) => setIssueUrl(e.target.value)}
+            placeholder="GitHub issue link"
+            className="w-[60%] px-4 py-3 rounded-xl bg-[#111]/60 border border-cyan-500/30 text-white"
+          />
+          <button
+            onClick={fetchIssueDetails}
+            className="px-5 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 transition"
+          >
+            Import
+          </button>
+        </div>
+
+        {issueTitle && (
+          <div className="bg-[#111]/60 p-6 rounded-2xl w-[60%] mx-auto mb-10 text-left border border-cyan-500/30">
+            <h2 className="text-2xl font-semibold text-cyan-400">{issueTitle}</h2>
+            <p className="text-gray-400 mt-2 text-sm max-h-40 overflow-y-auto whitespace-pre-line">
+              {issueDescription}
+            </p>
+          </div>
+        )}
+
+        <div className="border border-cyan-500/30 p-8 w-[60%] mx-auto rounded-2xl bg-[#111]/50">
+          <h2 className="text-3xl font-bold mb-6">Select Reward Badge</h2>
+
+          <div className="grid grid-cols-4 gap-6 mb-6">
+            {badges.map((b, i) => (
+              <div
+                key={i}
+                onClick={() => setBadgeURI(b.url)}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  badgeURI === b.url ? "border-cyan-400 scale-105 bg-cyan-400/10" : "border-gray-700"
+                }`}
+              >
+                <img src={b.url} className="w-14 h-14 mx-auto" alt={b.name} />
+                <p className="text-center mt-2 text-sm text-gray-300">{b.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <input
+            type="number"
+            value={rewardAmount}
+            onChange={(e) => setRewardAmount(e.target.value)}
+            placeholder="ETH amount"
+            className="w-full px-4 py-3 rounded-xl bg-[#000]/40 border border-cyan-500/30 text-white mb-4"
+            step="0.01"
+            min="0"
+          />
+
+          <button
+            onClick={handleCreateBounty}
+            disabled={loading}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-xl font-semibold hover:opacity-90 disabled:opacity-50"
+          >
+            {loading ? "⏳ Creating..." : "🚀 Create Gasless Bounty"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+//gascontract
+import { BUNDLER_URL, PAYMASTER_KEY, PAYMASTER_URL } from "./config";
+
+export const getSmartAccount = async ({ usePaymaster = true } = {}) => {
+  if (!window.ethereum) {
+    console.error("❌ Wallet not found in window.ethereum");
+    alert("MetaMask not detected");
+    return null;
+  }
+
+  try {
+    const { ethers } = await import("ethers");
+    const { BiconomySmartAccountV2 } = await import("@biconomy/account");
+    const { BiconomyPaymaster } = await import("@biconomy/paymaster");
+
+    // 1️⃣ Create provider & signer
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const signerAddress = await signer.getAddress();
+    console.log("✅ Signer acquired:", signerAddress);
+
+    // 2️⃣ Setup paymaster safely
+    let paymaster;
+    if (usePaymaster && PAYMASTER_URL) {
+      try {
+        paymaster = new BiconomyPaymaster({
+          paymasterUrl: PAYMASTER_URL,
+          paymasterKey: PAYMASTER_KEY
+        });
+        console.log("✅ Paymaster attached (auto gas sponsoring if eligible)");
+      } catch (pmErr) {
+        console.warn("⚠️ Paymaster init failed, proceeding without it", pmErr.message);
+      }
+    }
+
+    // 3️⃣ Create Smart Account
+    const smartAccount = await BiconomySmartAccountV2.create({
+      signer,
+      chainId: 11155111, // Sepolia
+      bundlerUrl: BUNDLER_URL,
+      paymaster: paymaster ?? undefined
+    });
+
+    const accountAddress = await smartAccount.getAccountAddress();
+    console.log("✅ Smart Account Ready:", accountAddress);
+
+    // 4️⃣ Wrap buildUserOp to always apply fallback gas
+    const originalBuildUserOp = smartAccount.buildUserOp.bind(smartAccount);
+    smartAccount.buildUserOp = async (txs, options = {}) => {
+      let userOp = await originalBuildUserOp(txs, options);
+
+      // Fallback gas limits if undefined
+      userOp.callGasLimit = userOp.callGasLimit ?? 600_000n;
+      userOp.verificationGasLimit = userOp.verificationGasLimit ?? 300_000n;
+      userOp.preVerificationGas = userOp.preVerificationGas ?? 80_000n;
+
+      // Safe paymaster data
+      if (usePaymaster) {
+        try {
+          const paymasterData = await smartAccount.getPaymasterAndData({ usePaymaster: true });
+          userOp.paymasterAndData = paymasterData ?? "0x";
+        } catch (err) {
+          console.warn("⚠️ Paymaster fetch failed in UserOp, skipping", err.message);
+          userOp.paymasterAndData = "0x";
+        }
+      }
+
+      return userOp;
+    };
+
+    return smartAccount;
+  } catch (err) {
+    console.error("❌ Smart Account Init Error:", err.message);
+    alert("Smart account init failed: " + (err.message || String(err)));
+    return null;
+  }
+};
+
+//export const BUNDLER_URL ="https://bundler.biconomy.io/api/v3/11155111/bundler_AypvsZtZ52jVL6p8dYGEig";
+export const PAYMASTER_URL = "https://paymaster.biconomy.io/api/v2/11155111/UOeBu1gX3.96675185-9413-4efa-a501-882be6d6d382";
+export const PAYMASTER_KEY = "UOeBu1gX3.96675185-9413-4efa-a501-882be6d6d382";
+export const CONTRACT_ADDRESS = "0xb27A99E4f86fd3342f213Ff41582b16Fa686A154";
+
+
+
+//creatbounty
+import React, { useState } from "react";
+import axios from "axios";
+import badges from "../badges/badges";
+import { Interface, parseEther } from "ethers";
+import { getSmartAccount } from "../gasless/smartAccount";
+import { CONTRACT_ADDRESS } from "../gasless/config";
+
+export default function CreateBounty() {
+  const [issueUrl, setIssueUrl] = useState("");
+  const [rewardAmount, setRewardAmount] = useState("");
+  const [badgeURI, setBadgeURI] = useState("");
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchIssueDetails = async () => {
+    const cleanUrl = issueUrl.trim();
+    if (!cleanUrl) return;
+
+    try {
+      const match = cleanUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/);
+      if (!match) return alert("❌ Invalid GitHub issue URL");
+
+      const [, owner, repo, issueNum] = match;
+      const githubRes = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${issueNum}`
+      );
+
+      setIssueTitle(githubRes.data.title || "No title");
+      setIssueDescription(githubRes.data.body || "No description");
+      console.log("✅ GitHub Issue Imported");
+    } catch (err) {
+      console.error("❌ GitHub Import Error:", err?.message || err);
+      alert("❌ GitHub request failed");
+    }
+  };
+
+  const handleCreateBounty = async () => {
+    if (!issueUrl.trim()) return alert("❌ Enter GitHub issue URL");
+    if (!rewardAmount || Number(rewardAmount) <= 0) return alert("❌ Enter valid ETH amount");
+    if (!badgeURI) return alert("❌ Select a reward badge");
+
+    setLoading(true);
+
+    try {
+      // 1) Connect wallet
+      if (!window.ethereum) return alert("❌ MetaMask not found");
+      const walletAccounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const eoa = walletAccounts[0];
+      console.log("✅ Connected EOA:", eoa);
+
+      // 2) Network check
+      const chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if ((chainId || "").toLowerCase() !== "0xaa36a7") {
+        alert("❌ Switch MetaMask to Sepolia network");
+        setLoading(false);
+        return;
+      }
+
+      // 3) Init smart account
+      const smartAccount = await getSmartAccount({ usePaymaster: true });
+      if (!smartAccount) {
+        alert("❌ Smart account init failed");
+        setLoading(false);
+        return;
+      }
+      const sender = await smartAccount.getAccountAddress();
+      console.log("📤 Sender address:", sender);
+
+      // 4) Prepare tx calldata & value
+      const { ethers } = await import("ethers");
+      if (!ethers.isAddress(CONTRACT_ADDRESS)) {
+        alert("❌ Invalid contract address");
+        setLoading(false);
+        return;
+      }
+
+      const abi = ["function createBounty(string,string) payable returns(uint256)"];
+      const bountyInterface = new Interface(abi);
+      const callData = bountyInterface.encodeFunctionData("createBounty", [issueUrl, badgeURI]);
+
+      const valueWei = parseEther(String(rewardAmount)); // BigInt
+      const valueHex = ethers.toBeHex(valueWei); // hex string
+
+      const tx = {
+        to: CONTRACT_ADDRESS,
+        data: callData,
+        value: valueHex
+      };
+
+      // 5) Local dry-run (best-effort)
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        await signer.call({ to: tx.to, data: tx.data, value: valueWei });
+        console.log("✅ Local simulation (signer.call) passed");
+      } catch (simErr) {
+        console.warn("⚠ Local simulation failed (contract may still succeed on-chain):", simErr?.message || simErr);
+      }
+
+      // 6) Build UserOp safely (never crash)
+      let userOp;
+      try {
+        userOp = await smartAccount.buildUserOp([tx]);
+      } catch (buildErr) {
+        console.warn("⚠ smartAccount.buildUserOp threw — will continue with safe fallback userOp:", buildErr?.message || buildErr);
+        userOp = {};
+      }
+
+      userOp = userOp || {};
+
+      // Force required fields so destructuring/reads never crash
+      userOp.sender = userOp.sender || sender;
+      userOp.callGasLimit = userOp.callGasLimit ?? 1_200_000n;
+      userOp.verificationGasLimit = userOp.verificationGasLimit ?? 600_000n;
+      userOp.preVerificationGas = userOp.preVerificationGas ?? 120_000n;
+
+      // Attach paymaster if available, but never crash
+      try {
+        const pmData = await smartAccount.getPaymasterAndData({ usePaymaster: true }).catch(() => "0x");
+        userOp.paymasterAndData = pmData && pmData.length > 2 ? pmData : "0x";
+      } catch (pmErr) {
+        console.warn("⚠ getPaymasterAndData failed, using 0x fallback:", pmErr?.message || pmErr);
+        userOp.paymasterAndData = "0x";
+      }
+
+      console.log("📦 Final UserOp (about to send):", userOp);
+
+      // 7) Try bundler gasless path first, robust logging + wait
+      let onchainReceipt = null;
+      let usedUserOp = false;
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      try {
+        console.log("➡️ Trying gasless send via bundler...");
+        const sendRes = await smartAccount.sendUserOp(userOp);
+        console.log("🔁 sendUserOp returned:", sendRes);
+
+        // Many SDKs return an object with wait(); prefer that
+        if (sendRes && typeof sendRes.wait === "function") {
+          console.log("⏳ Waiting for bundler/chain confirmation (sendRes.wait())...");
+          const waitRes = await sendRes.wait();
+          console.log("✅ Bundler/chain wait result:", waitRes);
+          onchainReceipt = waitRes;
+        } else if (sendRes && sendRes.transactionHash) {
+          console.log("⏳ Bundler returned transactionHash; waiting via provider...");
+          onchainReceipt = await provider.waitForTransaction(sendRes.transactionHash, 1, 120_000);
+          console.log("✅ Receipt via provider.waitForTransaction:", onchainReceipt);
+        } else if (sendRes && sendRes.userOpHash) {
+          // Best-effort: userOpHash was returned but no wait method. We can't reliably wait here via provider.
+          // Log and treat as "sent", but we will still try to confirm via fallback if needed.
+          console.log("ℹ️ Bundler returned userOpHash (no wait available):", sendRes.userOpHash);
+          // we will attempt to wait short period, otherwise fallback below
+          // (Skipping complex polling for brevity — fallback will ensure on-chain creation)
+          usedUserOp = true;
+          // small delay to give bundler time (optional)
+          await new Promise((r) => setTimeout(r, 3000));
+        } else {
+          console.warn("ℹ️ sendUserOp returned unexpected shape:", sendRes);
+        }
+
+        usedUserOp = true;
+      } catch (err) {
+        // Very important: print full error to console for debugging
+        console.error("❌ Bundler send failed — full error object:", err);
+        try { console.error("err.message:", err.message); } catch {}
+        try { console.error("err.data:", err.data); } catch {}
+        try { console.error("err.response?.data:", err.response && err.response.data); } catch {}
+        try { console.error("err.stack:", err.stack); } catch {}
+      }
+
+      // 8) If bundler did not produce a confirmed on-chain receipt, use fallback on-chain send
+      if (!onchainReceipt) {
+        try {
+          console.log("➡️ Attempting direct fallback on-chain transaction (EOA signer)...");
+          const signer = await provider.getSigner();
+          // signer.sendTransaction expects value as number or hex — use valueHex
+          const fallbackTxResp = await signer.sendTransaction({
+            to: tx.to,
+            data: tx.data,
+            value: valueHex,
+            gasLimit: 1_500_000 // high gas limit to avoid gas issues
+          });
+          console.log("🔁 Fallback tx response:", fallbackTxResp);
+          const txReceipt = await fallbackTxResp.wait();
+          console.log("✅ Fallback tx mined:", txReceipt);
+          onchainReceipt = txReceipt;
+          usedUserOp = false; // fallback used instead of userOp
+        } catch (fallbackErr) {
+          console.error("❌ Fallback on-chain tx failed too:", fallbackErr);
+          alert("Transaction failed via bundler and fallback. Check console for error details.");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 9) If we have an on-chain receipt: save to backend
+      
+          if (onchainReceipt) {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const walletEOA = await signer.getAddress();
+
+    const saveBody = {
+      bountyId: Date.now(), // use number not txHash
+      issueUrl,
+      rewardAmount: Number(rewardAmount),
+      rewardType: "ETH",
+      badgeURI,
+      creatorAddress: walletEOA.toLowerCase()
+    };
+
+    const saveRes = await axios.post(
+      "http://localhost:2025/api/bounties/create-bounty",
+      saveBody
+    );
+
+    console.log("✅ Bounty saved in backend:", saveRes.data);
+    alert("🎉 Bounty Created & Saved Successfully!");
+
+  } catch (dbErr) {
+    console.error("🔥 Backend Save Error:", dbErr.response?.data || dbErr.message);
+    alert("❌ Bounty created on-chain, but DB save failed!");
+  }
+} else {
+        alert("Transaction was not confirmed on-chain; nothing saved.");
+      }
+    } catch (err) {
+      console.error("❌ Unexpected error in create flow:", err);
+      alert("❌ Something went wrong — check console for details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-black text-white min-h-screen py-20 px-6">
+      <div className="max-w-7xl mx-auto text-center">
+        <h1 className="text-5xl font-bold mb-8">Create New Git Bounty</h1>
+
+        <div className="flex gap-4 justify-center mb-10">
+          <input
+            value={issueUrl}
+            onChange={(e) => setIssueUrl(e.target.value)}
+            placeholder="GitHub issue link"
+            className="w-[60%] px-4 py-3 rounded-xl bg-[#111]/60 border border-cyan-500/30 text-white"
+          />
+          <button
+            onClick={fetchIssueDetails}
+            className="px-5 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700"
+          >
+            Import
+          </button>
+        </div>
+
+        {issueTitle && (
+          <div className="bg-[#111]/60 p-6 rounded-2xl w-[60%] mx-auto border border-cyan-500/30 text-left mb-10">
+            <h2 className="text-2xl font-semibold text-cyan-400">{issueTitle}</h2>
+            <p className="text-gray-400 mt-2 text-sm max-h-40 overflow-y-auto whitespace-pre-line">
+              {issueDescription}
+            </p>
+          </div>
+        )}
+
+        <div className="border border-cyan-500/30 p-8 w-[60%] mx-auto rounded-2xl bg-[#111]/50">
+          <div className="grid grid-cols-4 gap-6 mb-6">
+            {badges.map((b, i) => (
+              <div
+                key={i}
+                onClick={() => setBadgeURI(b.url)}
+                className={`p-4 rounded-xl border cursor-pointer ${badgeURI === b.url ? "border-cyan-400 bg-cyan-400/10 scale-105" : "border-gray-700"}`}
+              >
+                <img src={b.url} alt={b.name} className="w-14 h-14 mx-auto" />
+                <p className="text-center mt-2 text-sm text-gray-300">{b.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <input
+            type="number"
+            value={rewardAmount}
+            onChange={(e) => setRewardAmount(e.target.value)}
+            placeholder="ETH amount"
+            className="w-full px-4 py-3 rounded-xl bg-[#000]/40 border text-white mb-4 border-cyan-500/30"
+            step="0.01"
+            min="0"
+          />
+
+          <button
+            onClick={handleCreateBounty}
+            disabled={loading}
+            className="w-full py-4 text-xl font-semibold rounded-xl bg-gradient-to-r hover:opacity-90 disabled:opacity-50 from-cyan-500 to-blue-600"
+          >
+            {loading ? "⏳ Creating..." : "🚀 Create Gasless Bounty"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -6,7 +6,6 @@ import "./GitBountyBadge.sol";
 
 contract BountyDispenserGasless is ReentrancyGuard {
 
-
     struct Claim {
         address claimant;
         string proofLink;
@@ -42,11 +41,10 @@ contract BountyDispenserGasless is ReentrancyGuard {
         _;
     }
 
- constructor(address badgeAddress) {
-    require(badgeAddress != address(0), "Badge contract required");
-    badgeNFT = GitBountyBadge(badgeAddress);
-}
-
+    constructor(address badgeAddress) {
+        require(badgeAddress != address(0), "Badge contract required");
+        badgeNFT = GitBountyBadge(badgeAddress);
+    }
 
     // ✅ Create bounty with ETH deposit
     function createBounty(string calldata issueUrl, string calldata _badgeURI)
@@ -74,7 +72,7 @@ contract BountyDispenserGasless is ReentrancyGuard {
         return id;
     }
 
-    // ✅ Submit proof for bounty
+    // ✅ Submit or update proof for bounty
     function claimBounty(uint256 _id, string calldata _proof) external {
         Bounty storage b = bounties[_id];
         require(b.creator != address(0), "Bounty not found");
@@ -85,7 +83,7 @@ contract BountyDispenserGasless is ReentrancyGuard {
 
         Claim[] storage claims = bountyClaims[_id];
 
-        // Update existing claim if pending
+        // Update existing pending claim if present
         for (uint i = 0; i < claims.length; i++) {
             if (claims[i].claimant == msg.sender && !claims[i].approved) {
                 claims[i].proofLink = _proof;
@@ -94,7 +92,7 @@ contract BountyDispenserGasless is ReentrancyGuard {
             }
         }
 
-        // Create new claim
+        // Create new claim if no pending claim exists
         claims.push(Claim({
             claimant: msg.sender,
             proofLink: _proof,
@@ -194,6 +192,9 @@ contract BountyDispenserGasless is ReentrancyGuard {
         return (b.id, b.creator, b.rewardAmount, b.githubIssueUrl, b.isOpen, b.badgeURI, b.winner, memClaims);
     }
 
-   
+    function getClaims(uint256 id) external view returns (Claim[] memory) {
+         return bountyClaims[id]; 
+    }
+
     receive() external payable {}
 }

@@ -17,10 +17,6 @@ import BountyDetails from "./pages/BountyDetails";
 
 
 
-
-
-
-
 function App() {
   return (
   <>

@@ -1,8 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config(); // Load .env variables
-
+require('dotenv').config(); 
 const app = express();
 
 //server static files
@@ -15,14 +14,11 @@ app.use(express.json());
 
 //routes
 const createBountyRoute = require("./routes/CreateBountyRoute");
-const badgeRoute =require("./routes/badgeRoute");
-const tokenRequestRoute = require("./routes/TokenRequestRoute");
 
 
 
 app.use("/api/bounties", createBountyRoute);
-app.use("/api/badges", badgeRoute);
-app.use("/api/token-requests", tokenRequestRoute);
+
 
 
 
