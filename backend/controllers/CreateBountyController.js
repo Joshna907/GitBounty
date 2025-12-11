@@ -1,4 +1,5 @@
 const Bounty = require("../models/CreateBounty");
+const {fetchIssueTitle} = require("../utils/fetchIssueTitle");
 
 // Create new bounty
 const createBounty = async (req, res) => {
@@ -12,13 +13,14 @@ const createBounty = async (req, res) => {
       txHash,
       timestamp,
 
+
       // ✅ new fields
       projectName,
       language,
       difficultyLevel,
       deadline,
       rewardRange,
-      tags
+      tags,
     } = req.body;
 
     // Validations
@@ -44,7 +46,9 @@ const createBounty = async (req, res) => {
 
     // Normalize reward safely
     const normalizedReward = rewardAmount != null ? String(rewardAmount) : "0";
+    const issueTitle = await fetchIssueTitle(githubIssueUrl);
 
+    
     const bounty = await Bounty.create({
       bountyId: bountyId != null ? Number(bountyId) : null,
       githubIssueUrl: githubIssueUrl.trim(),
@@ -54,6 +58,7 @@ const createBounty = async (req, res) => {
 
       // ✅ Save Explore page filter data
       projectName: projectName.trim(),
+      issueTitle:issueTitle.trim(),
       language: language || "Solidity",
       difficultyLevel: difficultyLevel || "Beginner",
       deadline: deadline.trim(),
@@ -75,4 +80,116 @@ const createBounty = async (req, res) => {
   }
 };
 
-module.exports = { createBounty };
+// Get all bounties
+const getAllBounties = async (req, res) => {
+  try {
+    const bounties = await Bounty.find().sort({ createdAt: -1 });  
+    return res.status(200).json({ success: true, bounties });
+  } catch (err) {
+    console.error("🔥 Error fetching bounties:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// Get single bounty by DB ID
+const getBountyById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const bounty = await Bounty.findById(id);
+
+    if (!bounty) {
+      return res.status(404).json({ success: false, message: "Bounty not found" });
+    }
+
+    return res.status(200).json({ success: true, bounty });
+  } catch (err) {
+    console.error("🔥 Error fetching bounty:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// Get bounties created by a specific creator
+const getBountiesByCreator = async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    const bounties = await Bounty.find({
+      creatorAddress: address.toLowerCase()
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, bounties });
+  } catch (err) {
+    console.error("🔥 Error fetching creator bounties:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// cliam bounty
+const claimBounty = async (req, res) => {
+  try {
+    const { bountyId } = req.params;
+    const { developerAddress, submissionLink, notes } = req.body;
+
+    // Basic validation
+    if (!developerAddress || !submissionLink) {
+      return res.status(400).json({
+        success: false,
+        message: "Developer address and submission link are required",
+      });
+    }
+
+    // Find bounty by blockchain bountyId
+    const bounty = await Bounty.findOne({ bountyId: Number(bountyId) });
+
+    if (!bounty) {
+      return res.status(404).json({
+        success: false,
+        message: "Bounty not found",
+      });
+    }
+
+    // Prevent duplicate claims by same developer
+    const alreadySubmitted = bounty.submissions.some(
+      (s) => s.developerAddress.toLowerCase() === developerAddress.toLowerCase()
+    );
+
+    if (alreadySubmitted) {
+      return res.status(400).json({
+        success: false,
+        message: "You already submitted a solution for this bounty",
+      });
+    }
+
+    // Push new submission
+    bounty.submissions.push({
+      developerAddress: developerAddress.toLowerCase(),
+      submissionLink,
+      notes: notes || "",
+    });
+
+    // Update status → IN_REVIEW
+    bounty.status = "IN_REVIEW";
+
+    await bounty.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Bounty claimed successfully",
+      bounty,
+    });
+
+  } catch (err) {
+    console.error("🔥 Error claiming bounty:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
+
+
+
+module.exports = { createBounty,getAllBounties, getBountyById,getBountiesByCreator, claimBounty};

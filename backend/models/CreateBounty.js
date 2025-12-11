@@ -2,7 +2,8 @@ const mongoose = require("mongoose");
 
 const bountySchema = new mongoose.Schema({
   bountyId: Number,        // from blockchain
-  githubIssueUrl: String,  // Only GitHub Issue URL
+  githubIssueUrl: String, 
+  issueTitle:String,
   rewardAmount: { type: String }, // store ETH as string to avoid precision loss
   badgeURI: String,
   creatorAddress: String,  // wallet address
@@ -17,7 +18,7 @@ const bountySchema = new mongoose.Schema({
   projectName: { type: String, default: null },
   language: { 
     type: String,
-    enum: ["Solidity", "JavaScript", "Rust", "Python" ,"Php" ,"Java" ],
+    enum: ["Solidity", "JavaScript", "Rust", "Python" ,"Php" ,"Java","C++" , "TypeScript", "Go" ,"C#" ,"Ruby", "Swift"],
     default: "Solidity"
   },
   difficultyLevel: { 

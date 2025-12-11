@@ -43,7 +43,7 @@ const Navbar = () => {
           </Link>
         
           <Link
-            to="/explore-bounty"
+            to="/explore"
             className="relative text-gray-300 hover:text-[#f50090] transition-colors duration-300 text-lg font-semibold tracking-wide"
           >
             Explore Bounty
@@ -51,7 +51,7 @@ const Navbar = () => {
           </Link>
 
           <Link
-            to="/dashboard"
+            to="/bounty-details"
             className="relative text-gray-300 hover:text-[#f50090] transition-colors duration-300 text-lg font-semibold tracking-wide"
           >
             Dashboard

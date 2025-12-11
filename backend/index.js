@@ -14,13 +14,11 @@ app.use(express.json());
 
 //routes
 const createBountyRoute = require("./routes/CreateBountyRoute");
-
+const issueRoute = require("./routes/IssueRoute");
 
 
 app.use("/api/bounties", createBountyRoute);
-
-
-
+app.use("/api/issues", issueRoute);
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {

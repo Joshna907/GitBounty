@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import "./index.css";
 
 import Navbar from "./components/Navbar";
@@ -12,28 +12,55 @@ import ExploreBounty from "./pages/ExploreBounty";
 import DashBoard from "./pages/DashBoard";
 import CreateBounty from "./pages/CreateBounty";
 import ClaimBounty from "./pages/ClaimBounty";
-
 import BountyDetails from "./pages/BountyDetails";
-
+import ViewClaims from "./pages/ViewCliam";
+import HandleCliam from "./pages/HandleCliam";
+import CreatedBountyDetails from "./pages/CreatedBountyDetails";
+import CloseBounty from "./pages/CloseBounty";
 
 
 function App() {
-  return (
-  <>
-    <Navbar/>
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/sign-in" element={< SignIn/>} />
-      <Route path="/explore" element={<ExploreBounty />} />
-      <Route path="/dashboard" element={<DashBoard />} />
-      <Route path="/create-bounty" element={<CreateBounty />} />
-      <Route path="/explore-bounty" element={<ExploreBounty />} />
-      <Route path="/claim" element={<ClaimBounty />} />
-      <Route path="/bounty/:id" element={<BountyDetails />} />
+  const location = useLocation();
 
-    </Routes>
-    <AnnouncementSection/>
-  </>
+ const hideLayout = 
+  location.pathname.startsWith("/view-claim") ||
+  location.pathname.startsWith("/handle-claim") ||
+  location.pathname.startsWith("/bounty-details") ||
+  location.pathname.startsWith("/close-bounty") ;
+
+
+  return (
+    <>
+      {!hideLayout && <Navbar />}
+
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/sign-in" element={<SignIn />} />
+        <Route path="/explore" element={<ExploreBounty />} />
+        <Route path="/dashboard" element={<DashBoard />} />
+        <Route path="/create-bounty" element={<CreateBounty />} />
+        <Route path="/claim" element={<ClaimBounty />} />
+        <Route path="/bounty/:id" element={<BountyDetails />} />
+
+        <Route path="/claim/:id" element={<ClaimBounty />} />
+
+
+        {/* Creator dashboard WITHOUT navbar/footer */}
+        {/* static page */}
+        <Route path="/view-claim" element={<ViewClaims />} />
+        <Route path="/handle-claim" element={<HandleCliam />} />
+        <Route path="/bounty-details" element={<CreatedBountyDetails />} />
+        <Route path="/close-bounty" element={< CloseBounty/>} />
+        {/* dynmic page */}
+        <Route path="/view-claim/:id" element={<ViewClaims />} />
+        <Route path="/handle-claim/:id/:devAddress" element={< HandleCliam/>} />
+        <Route path="/close-bounty/:id" element={<CloseBounty />} />
+
+
+      </Routes>
+
+      {!hideLayout && <AnnouncementSection />}
+    </>
   );
 }
 

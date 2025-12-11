@@ -85,6 +85,7 @@ export default function CreateBounty() {
       await axios.post("http://localhost:2025/api/bounties/create-bounty", {
         bountyId: createdId ? Number(createdId) : null,
         githubIssueUrl: issueUrl.trim(),
+        issueTitle:issueTitle.trim(),
         rewardAmount: rewardAmount.toString(),
         badgeURI: badgeURI,
         creatorAddress: sender,
@@ -93,6 +94,7 @@ export default function CreateBounty() {
         winnerAddress: null,
         winnerUsername: null,
         submissions: [],
+
 
         // ✅ NEW ADDED SCHEMA FIELDS (same names kept)
         projectName: projectName || null,
