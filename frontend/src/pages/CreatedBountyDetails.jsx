@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { 
-  FaWallet, FaMedal, FaCode, FaClock 
-} from "react-icons/fa";
+import { FaWallet, FaMedal, FaCode, FaClock } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { ethers } from "ethers";
 import CreatorLayout from "../Layout/CreatorLayout";
+import BountyDispenserGaslessABI from "../contractABI/BountyDispenserGasless.json"; // Make sure ABI is here
+
+const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS_HERE"; // Replace with your deployed contract address
 
 const StatBox = ({ icon, label, value }) => (
   <div className="flex flex-col items-center bg-[#111]/60 p-5 rounded-xl border border-[#f50090]/25 shadow-[0_0_16px_rgba(245,0,144,0.15)] hover:shadow-[0_0_30px_rgba(245,0,144,0.4)] transition-all">
@@ -22,24 +24,20 @@ const CreatedBountyDetails = () => {
   const [mintedBadges, setMintedBadges] = useState([]);
   const [wallet, setWallet] = useState(null);
 
-  // ⛔ Do NOT auto connect wallet
-  // Show a button so user can connect manually
-
+  // Connect wallet manually
   const connectWallet = async () => {
     try {
       if (!window.ethereum) return alert("MetaMask not found!");
-
       const accounts = await window.ethereum.request({
         method: "eth_requestAccounts",
       });
-
       setWallet(accounts[0]);
     } catch (err) {
       console.error("Wallet connection error:", err);
     }
   };
 
-  // Fetch data ONLY when wallet is connected
+  // Fetch data only when wallet is connected
   useEffect(() => {
     if (!wallet) return;
 
@@ -48,7 +46,6 @@ const CreatedBountyDetails = () => {
         const res = await axios.get(
           `http://localhost:2025/api/bounties/creator/${wallet}`
         );
-
         setBounties(res.data.bounties || []);
         setRecentSubs(res.data.recentSubmissions || []);
         setMintedBadges(res.data.badges || []);
@@ -60,6 +57,41 @@ const CreatedBountyDetails = () => {
     fetchCreatorData();
   }, [wallet]);
 
+  // Close bounty function
+  const closeBounty = async (bounty) => {
+    if (!wallet) return alert("Connect your wallet first!");
+
+    try {
+      // 1. Connect to contract
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(
+        CONTRACT_ADDRESS,
+        BountyDispenserGaslessABI,
+        signer
+      );
+
+      // 2. Call closeBounty on blockchain
+      const tx = await contract.closeBounty(bounty.bountyId);
+      await tx.wait(); // wait for confirmation
+
+      // 3. Update backend DB
+      await axios.put(`http://localhost:2025/api/bounties/${bounty._id}/close`);
+
+      // 4. Update local state
+      setBounties((prev) =>
+        prev.map((b) =>
+          b._id === bounty._id ? { ...b, status: "CLOSED" } : b
+        )
+      );
+
+      alert("Bounty closed successfully!");
+    } catch (err) {
+      console.error("Error closing bounty:", err);
+      alert("Failed to close bounty. See console for details.");
+    }
+  };
+
   return (
     <div className="flex bg-[#090909] text-white min-h-screen">
       <CreatorLayout />
@@ -69,7 +101,7 @@ const CreatedBountyDetails = () => {
         {/* Banner */}
         <div className="w-full bg-gradient-to-r from-[#f50090]/20 to-[#9b23ea]/20 rounded-2xl p-6 mb-6 border border-[#f50090]/30 shadow-[0_0_40px_rgba(245,0,144,0.3)]">
           <h2 className="text-3xl font-extrabold bg-gradient-to-r from-[#f50090] to-[#ca8ff1] bg-clip-text text-transparent">
-            🚀 Welcome Back Creator!
+            Welcome Back Creator!
           </h2>
           <p className="text-lg text-gray-300 mt-2">
             Manage your bounties, verify submissions, mint badges & release rewards.
@@ -166,18 +198,10 @@ const CreatedBountyDetails = () => {
                               View Bounty
                             </button>
 
-                            {/* Handle */}
-                            <button
-                              onClick={() => navigate(`/close/${b._id}/${wallet}`)}
-                              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ca8ff1]/15 text-[#ca8ff1] border border-[#ca8ff1]/30 hover:bg-[#ca8ff1]/25"
-                            >
-                              close Bounty
-                            </button>
-
                             {/* Close Bounty */}
                             {b.status === "OPEN" && (
                               <button
-                                onClick={() => navigate(`/close-bounty/${b._id}`)}
+                                onClick={() => closeBounty(b)}
                                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25"
                               >
                                 Close
@@ -203,37 +227,32 @@ const CreatedBountyDetails = () => {
                   <p className="text-gray-400">No recent submissions yet.</p>
                 )}
 
+                {recentSubs.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between items-center bg-[#111]/60 rounded-xl p-4 border border-[#ca8ff1]/20 text-sm"
+                  >
+                    <div>
+                      <p className="text-gray-300 text-base">
+                        Project: <span className="font-semibold">{s.projectName}</span>
+                      </p>
+                      <p className="text-gray-400 text-base">Dev: {s.developerAddress}</p>
+                      <p className="text-[#f50090] truncate text-base">{s.submissionLink}</p>
+                      <p className="text-gray-400 text-base">Note: {s.notes}</p>
+                    </div>
 
-              {recentSubs.map((s, i) => (
-  <div 
-    key={i}
-    className="flex justify-between items-center bg-[#111]/60 rounded-xl p-4 border border-[#ca8ff1]/20 text-sm"
-  >
-    <div>
-      <p className="text-gray-300 text-base">
-        Project: <span className="font-semibold">{s.projectName}</span>
-      </p>
-      <p className="text-gray-400 text-base">Dev: {s.developerAddress}</p>
-      <p className="text-[#f50090] truncate text-base">{s.submissionLink}</p>
-      <p className="text-gray-400 text-base">Note: {s.notes}</p>
-    </div>
+                    <button
+                      onClick={() => navigate(`/handle-claim/${s.bountyId}/${s.developerAddress}`)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-[#f50090]/20 text-[#f50090] border border-[#f50090]/40 hover:bg-[#f50090]/30 transition-all"
+                    >
+                      Handle Claim
+                    </button>
+                  </div>
+                ))}
 
-    <button
-      onClick={() => navigate(`/handle-claim/${s.bountyId}/${s.developerAddress}`)}
-      className="px-4 py-2 rounded-xl text-xs font-bold 
-                 bg-[#f50090]/20 text-[#f50090] 
-                 border border-[#f50090]/40 
-                 hover:bg-[#f50090]/30 transition-all"
-    >
-      Handle Claim
-    </button>
-  </div>
-))}
-
-  </div>
+              </div>
             </section>
 
-            
           </>
         )}
 

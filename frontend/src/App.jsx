@@ -16,7 +16,7 @@ import BountyDetails from "./pages/BountyDetails";
 import ViewClaims from "./pages/ViewCliam";
 import HandleCliam from "./pages/HandleCliam";
 import CreatedBountyDetails from "./pages/CreatedBountyDetails";
-import CloseBounty from "./pages/CloseBounty";
+
 
 
 function App() {
@@ -50,11 +50,11 @@ function App() {
         <Route path="/view-claim" element={<ViewClaims />} />
         <Route path="/handle-claim" element={<HandleCliam />} />
         <Route path="/bounty-details" element={<CreatedBountyDetails />} />
-        <Route path="/close-bounty" element={< CloseBounty/>} />
+        
         {/* dynmic page */}
         <Route path="/view-claim/:id" element={<ViewClaims />} />
         <Route path="/handle-claim/:id/:devAddress" element={< HandleCliam/>} />
-        <Route path="/close-bounty/:id" element={<CloseBounty />} />
+        
 
 
       </Routes>
