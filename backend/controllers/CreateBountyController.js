@@ -112,34 +112,108 @@ const getBountyById = async (req, res) => {
 // Get bounties created by a specific creator
 const getBountiesByCreator = async (req, res) => {
   try {
-    const { address } = req.params;
+    const { wallet } = req.params;
 
+    if (!wallet) {
+      return res.status(400).json({ success: false, message: "Wallet missing" });
+    }
+
+    // Get creator bounties
     const bounties = await Bounty.find({
-      creatorAddress: address.toLowerCase()
+      creatorAddress: wallet.toLowerCase()
     }).sort({ createdAt: -1 });
 
-    return res.status(200).json({ success: true, bounties });
+    // Collect all submissions from every bounty
+    let submissions = [];
+    bounties.forEach(b => {
+      if (b.submissions && b.submissions.length > 0) {
+        b.submissions.forEach(s => {
+          submissions.push({
+             bountyId: s.bountyId, 
+            projectName: b.projectName,
+            developerAddress: s.developerAddress,
+            submissionLink: s.submissionLink,
+            notes: s.notes,
+          });
+        });
+      }
+    });
+    
+
+    return res.status(200).json({
+      success: true,
+      bounties,
+      recentSubmissions: submissions,
+      
+    });
+
   } catch (err) {
     console.error("🔥 Error fetching creator bounties:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// cliam bounty
-const claimBounty = async (req, res) => {
-  try {
-    const { bountyId } = req.params;
-    const { developerAddress, submissionLink, notes } = req.body;
 
-    // Basic validation
-    if (!developerAddress || !submissionLink) {
-      return res.status(400).json({
+
+//get bounty with claim
+const getBountyWithClaims = async (req, res) => {
+  try {
+    const { bountyId } = req.params;   
+
+    const bounty = await Bounty.findOne({ bountyId: bountyId });
+
+    if (!bounty) {
+      return res.status(404).json({
         success: false,
-        message: "Developer address and submission link are required",
+        message: "Bounty not found",
       });
     }
 
-    // Find bounty by blockchain bountyId
+    return res.status(200).json({
+      success: true,
+      bounty: {
+        bountyId: bounty.bountyId,
+        projectName: bounty.projectName,
+        issueTitle: bounty.issueTitle,
+        githubIssueUrl: bounty.githubIssueUrl,
+        rewardAmount: bounty.rewardAmount,
+        badgeURI: bounty.badgeURI,
+        creatorAddress: bounty.creatorAddress,
+        language: bounty.language,
+        difficultyLevel: bounty.difficultyLevel,
+        deadline: bounty.deadline,
+        rewardRange: bounty.rewardRange,
+        tags: bounty.tags,
+        description: bounty.description,
+        status: bounty.status,
+        createdAt: bounty.createdAt,
+
+        // ⭐ ALL SUBMISSIONS (CLAIMS)
+        submissions: bounty.submissions?.map((s) => ({
+           bountyId: s.bountyId, 
+          developerAddress: s.developerAddress,
+          submissionLink: s.submissionLink,
+          notes: s.notes,
+          submittedAt: s.submittedAt,
+        })) || []
+      }
+    });
+
+  } catch (err) {
+    console.error("🔥 Error fetching bounty with claims:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
+// get single claim
+const getSingleClaim = async (req, res) => {
+  try {
+    const { bountyId, developer } = req.params;
+
     const bounty = await Bounty.findOne({ bountyId: Number(bountyId) });
 
     if (!bounty) {
@@ -149,38 +223,84 @@ const claimBounty = async (req, res) => {
       });
     }
 
-    // Prevent duplicate claims by same developer
-    const alreadySubmitted = bounty.submissions.some(
-      (s) => s.developerAddress.toLowerCase() === developerAddress.toLowerCase()
+    const claim = bounty.submissions.find(
+      (s) => s.developerAddress.toLowerCase() === developer.toLowerCase()
     );
 
-    if (alreadySubmitted) {
-      return res.status(400).json({
+    if (!claim) {
+      return res.status(404).json({
         success: false,
-        message: "You already submitted a solution for this bounty",
+        message: "Claim not found for this developer",
       });
     }
 
-    // Push new submission
-    bounty.submissions.push({
-      developerAddress: developerAddress.toLowerCase(),
-      submissionLink,
-      notes: notes || "",
+    return res.status(200).json({
+      success: true,
+      bounty: {
+        bountyId: bounty.bountyId,
+        projectName: bounty.projectName,
+        issueTitle: bounty.issueTitle,
+        rewardAmount: bounty.rewardAmount,
+        rewardRange: bounty.rewardRange,
+        language: bounty.language,
+        difficultyLevel: bounty.difficultyLevel,
+        deadline: bounty.deadline,
+        status: bounty.status,
+      },
+      claim: {
+        bountyId: bountyId,
+        developerAddress: claim.developerAddress,
+        submissionLink: claim.submissionLink,
+        notes: claim.notes,
+        submittedAt: claim.submittedAt,
+        status: claim.status,
+      },
     });
 
-    // Update status → IN_REVIEW
-    bounty.status = "IN_REVIEW";
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
+
+// POST /api/bounties/:bountyId/claim
+const claimBounty = async (req, res) => {
+  try {
+    const { bountyId } = req.params;
+    const { developerAddress, submissionLink, notes } = req.body;
+
+    const bounty = await Bounty.findOne({ bountyId: Number(bountyId) });
+
+    if (!bounty) {
+      return res.status(404).json({
+        success: false,
+        message: "Bounty not found",
+      });
+    }
+
+    // Push submission
+    bounty.submissions.push({
+      bountyId: Number(bountyId),
+      developerAddress: developerAddress.toLowerCase(),
+      submissionLink,
+      notes,
+      createdAt: new Date(),
+    });
 
     await bounty.save();
 
     return res.status(200).json({
       success: true,
-      message: "Bounty claimed successfully",
+      message: "Claim submitted successfully",
       bounty,
     });
 
   } catch (err) {
-    console.error("🔥 Error claiming bounty:", err);
+    console.error("🔥 Error submitting claim:", err);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -192,4 +312,4 @@ const claimBounty = async (req, res) => {
 
 
 
-module.exports = { createBounty,getAllBounties, getBountyById,getBountiesByCreator, claimBounty};
+module.exports = { createBounty,getAllBounties, getBountyById,getBountiesByCreator, getBountyWithClaims,getSingleClaim, claimBounty};

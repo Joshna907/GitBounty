@@ -102,6 +102,7 @@ useEffect(() => {
       const backendUrl = `${BACKEND_BASE}/api/bounties/${bountyId}/claim`;
 
       const payload = {
+        bountyId:bountyId,
         developerAddress: signerAddr,
         submissionLink: proofLink,
         notes: note, // ✅ send developer note

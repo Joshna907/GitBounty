@@ -34,9 +34,12 @@ const bountySchema = new mongoose.Schema({
 
   submissions: [
     {
+      bountyId: Number,               
       developerAddress: String,
       submissionLink: String,
       notes: String,
+      createdAt: { type: Date, default: Date.now }
+
     }
   ],
   winnerAddress: { type: String, default: null }, // set null until approved
