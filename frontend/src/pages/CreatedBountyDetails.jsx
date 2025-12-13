@@ -25,17 +25,24 @@ const CreatedBountyDetails = () => {
   const [wallet, setWallet] = useState(null);
 
   // Connect wallet manually
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) return alert("MetaMask not found!");
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-      setWallet(accounts[0]);
-    } catch (err) {
-      console.error("Wallet connection error:", err);
+ const connectWallet = async () => {
+  try {
+    if (!window.ethereum) {
+      alert("No crypto wallet detected. Please install a browser wallet.");
+      return;
     }
-  };
+
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+
+    const signer = provider.getSigner();
+    const address = await signer.getAddress();
+
+    setWallet(address);
+  } catch (err) {
+    console.error("Wallet connection error:", err);
+  }
+};
 
   // Fetch data only when wallet is connected
   useEffect(() => {

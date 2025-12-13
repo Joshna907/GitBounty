@@ -9,7 +9,7 @@ import AnnouncementSection from "./components/AnnouncementSection";
 import Home from "./pages/Home";
 import SignIn from "./pages/SignIn";
 import ExploreBounty from "./pages/ExploreBounty";
-import DashBoard from "./pages/DashBoard";
+import DashBoard from "./pages/UserDashBoard";
 import CreateBounty from "./pages/CreateBounty";
 import ClaimBounty from "./pages/ClaimBounty";
 import BountyDetails from "./pages/BountyDetails";
@@ -26,7 +26,8 @@ function App() {
   location.pathname.startsWith("/view-claim") ||
   location.pathname.startsWith("/handle-claim") ||
   location.pathname.startsWith("/bounty-details") ||
-  location.pathname.startsWith("/close-bounty") ;
+  location.pathname.startsWith("/close-bounty") ||
+  location.pathname.startsWith("/dashboard");
 
 
   return (
