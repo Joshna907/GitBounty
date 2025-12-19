@@ -18,7 +18,7 @@ const Home = () => {
         <FeaturesSection />
       </section>
 
-      <section className="py-10">
+      <section className="pt-[0px]">
         <Testimonials />
       </section>
 

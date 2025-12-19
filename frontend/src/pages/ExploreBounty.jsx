@@ -291,7 +291,7 @@ const fetchBounties = async () => {
                   {/* //claim bounty button */}
                   <button
                     onClick={() =>
-                      navigate(`/claim/${bounty._id}`, {
+                      navigate(`/claim/${bounty.bountyId}`, {
                         state: { bounty },
                       })
                     }

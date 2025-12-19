@@ -1,5 +1,7 @@
 const Bounty = require("../models/CreateBounty");
 const {fetchIssueTitle} = require("../utils/fetchIssueTitle");
+const User = require("../models/User");
+const jwt = require("jsonwebtoken"); // top of file (only once)
 
 // Create new bounty
 const createBounty = async (req, res) => {
@@ -71,8 +73,46 @@ const createBounty = async (req, res) => {
       txHash: txHash || null,
       timestamp: timestamp || Math.floor(Date.now() / 1000)
     });
+    // ================= AUTO-ASSIGN CREATOR ROLE =================
+    // ================= AUTO-ASSIGN CREATOR ROLE =================
+// 🔥 Get user from GitHub login (JWT)
+const userId = req.user?.id;   // comes from auth middleware
+if (!userId) {
+  return res.status(401).json({ success: false, message: "Unauthorized" });
+}
 
-    return res.status(201).json({ success: true, bounty });
+const user = await User.findById(userId);
+if (!user) {
+  return res.status(404).json({ success: false, message: "User not found" });
+}
+
+// 🔥 Save wallet if not already saved
+if (!user.walletAddress) {
+  user.walletAddress = creatorAddress.toLowerCase();
+}
+
+// 🔥 Assign creator role
+user.roles.creator = true;
+await user.save();
+
+
+// 🔥 GENERATE JWT ONLY IF USER EXISTS
+token = jwt.sign(
+  {
+    id: user._id,
+    avatar: user.avatar,
+    roles: user.roles   // ✅ ADD THIS
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "7d" }
+);
+
+
+return res.status(201).json({
+  success: true,
+  bounty,
+  token
+});
 
   } catch (err) {
     console.error("🔥 Error saving bounty:", err);
@@ -134,6 +174,7 @@ const getBountiesByCreator = async (req, res) => {
             developerAddress: s.developerAddress,
             submissionLink: s.submissionLink,
             notes: s.notes,
+            
           });
         });
       }
@@ -194,7 +235,7 @@ const getBountyWithClaims = async (req, res) => {
           developerAddress: s.developerAddress,
           submissionLink: s.submissionLink,
           notes: s.notes,
-          submittedAt: s.submittedAt,
+          createdAt: s.createdAt,   // 🔥 FIXED FIELD
         })) || []
       }
     });
@@ -248,12 +289,11 @@ const getSingleClaim = async (req, res) => {
         status: bounty.status,
       },
       claim: {
-        bountyId: bountyId,
+        bountyId: claim.bountyId,
         developerAddress: claim.developerAddress,
         submissionLink: claim.submissionLink,
         notes: claim.notes,
-        submittedAt: claim.submittedAt,
-        status: claim.status,
+        createdAt: claim.createdAt
       },
     });
 
@@ -265,6 +305,7 @@ const getSingleClaim = async (req, res) => {
     });
   }
 };
+
 
 
 // POST /api/bounties/:bountyId/claim
@@ -292,12 +333,37 @@ const claimBounty = async (req, res) => {
     });
 
     await bounty.save();
+   // ================= AUTO-ASSIGN DEVELOPER ROLE =================
+   let user = null;
+const userId = req.user?.id;
+if (userId) {
+   user= await User.findById(userId);
+  if (user) {
+    if (!user.walletAddress) {
+      user.walletAddress = developerAddress.toLowerCase();
+    }
+    user.roles.developer = true;
+    await user.save();
+  }
+}
 
-    return res.status(200).json({
-      success: true,
-      message: "Claim submitted successfully",
-      bounty,
-    });
+token = jwt.sign(
+  {
+    id: user._id,
+    avatar: user.avatar,
+    roles: user.roles   
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "7d" }
+);
+
+
+return res.json({
+  success: true,
+  bounty,
+  token
+});
+
 
   } catch (err) {
     console.error("🔥 Error submitting claim:", err);
@@ -309,7 +375,148 @@ const claimBounty = async (req, res) => {
   }
 };
 
+// handle claim
+const handleClaim = async (req, res) => {
+  try {
+    const { bountyId } = req.params;
+    const {
+      developerAddress,
+      approve,                // true = approve, false = reject
+      messageFromCreator,
+      winnerUsername,
+      txHash,
+      timestamp
+    } = req.body;
+
+    const bounty = await Bounty.findOne({ bountyId: Number(bountyId) });
+    if (!bounty) {
+      return res.status(404).json({ success: false, message: "Bounty not found" });
+    }
+
+    const devLower = developerAddress.toLowerCase();
+
+    const submission = bounty.submissions.find(
+      s => s.developerAddress.toLowerCase() === devLower
+    );
+
+    if (!submission) {
+      return res.status(404).json({ success: false, message: "Submission not found" });
+    }
+
+    submission.messageFromCreator = messageFromCreator || null;
+    submission.updatedAt = new Date();
+
+    // ================= APPROVE =================
+    if (approve === true) {
+      submission.isApproved = true;
+
+      bounty.status = "APPROVED";
+      bounty.winnerAddress = devLower;
+      bounty.winnerUsername = winnerUsername || null;
+      bounty.txHash = txHash || bounty.txHash;
+      bounty.timestamp = timestamp || Math.floor(Date.now() / 1000);
+    }
+
+    // ================= REJECT =================
+    if (approve === false) {
+      submission.isApproved = false;
+
+      bounty.status = "REJECT"; // ✅ USE ENUM
+      bounty.winnerAddress = null;
+      bounty.winnerUsername = null;
+      bounty.txHash = null;
+      bounty.timestamp = null;
+    }
+
+    await bounty.save();
+
+    res.json({
+      success: true,
+      message: approve ? "Claim approved" : "Claim rejected",
+      bountyStatus: bounty.status,
+      updatedSubmission: submission
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 
+//get data for devloper dashboard 
 
-module.exports = { createBounty,getAllBounties, getBountyById,getBountiesByCreator, getBountyWithClaims,getSingleClaim, claimBounty};
+const getDeveloperDashboard = async (req, res) => {
+  try {
+    const wallet = req.params.wallet.toLowerCase();
+
+    const bounties = await Bounty.find({
+      "submissions.developerAddress": wallet
+    });
+
+    let totalSubmissions = 0;
+    let approved = 0;
+    let rejected = 0;
+    let pending = 0;
+    let ethEarned = 0;
+
+    let skillsSet = new Set();
+    let activity = [];
+
+    bounties.forEach(bounty => {
+      bounty.submissions.forEach(sub => {
+        if (sub.developerAddress.toLowerCase() === wallet) {
+
+          totalSubmissions++;
+          skillsSet.add(bounty.language);
+
+          if (sub.isApproved) {
+            approved++;
+            ethEarned += parseFloat(bounty.rewardAmount || 0);
+          } else if (bounty.status === "REJECT") {
+            rejected++;
+          } else {
+            pending++;
+          }
+
+          activity.push({
+            text: bounty.projectName || bounty.issueTitle,
+            status: sub.isApproved
+              ? "approved"
+              : bounty.status === "REJECT"
+              ? "rejected"
+              : "pending",
+            date: sub.createdAt
+          });
+        }
+      });
+    });
+
+    activity.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Available bounties preview
+    const availableBounties = await Bounty.find({ status: "OPEN" })
+      .limit(3)
+      .select("projectName rewardAmount language deadline");
+
+    res.json({
+      stats: {
+        totalSubmissions,
+        approved,
+        rejected,
+        pending,
+        ethEarned: ethEarned.toFixed(3),
+        bountiesWon: approved,
+        badges: approved
+      },
+      skills: [...skillsSet],
+      activity: activity.slice(0, 5),
+      availableBounties
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Developer dashboard error" });
+  }
+};
+
+module.exports = { createBounty,getAllBounties, getBountyById,getBountiesByCreator, getBountyWithClaims,getSingleClaim,getDeveloperDashboard,claimBounty,handleClaim};

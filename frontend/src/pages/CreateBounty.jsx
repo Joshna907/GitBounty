@@ -7,6 +7,8 @@ import { FaWallet, FaGithub, FaCoins, FaMedal, FaCrown, FaTags, FaCalendarAlt, F
 const CONTRACT_ADDRESS = "0xd1EF81d6e2fC6f9958E03948688784cB2f14DaF9";
 
 export default function CreateBounty() {
+  const token = localStorage.getItem("gitbounty_token");
+
   const [issueUrl, setIssueUrl] = useState("");
   const [rewardAmount, setRewardAmount] = useState("");
   const [badgeURI, setBadgeURI] = useState("");
@@ -57,55 +59,81 @@ export default function CreateBounty() {
       setCreatorAddress(sender);
 
       const bountyInterface = new ethers.Interface([
-        "function createBounty(string issueUrl, string badgeURI) payable returns(uint256)",
-        "event BountyCreated(uint256 indexed id, address indexed creator, uint256 reward)"
-      ]);
+  "function createBounty(string issueUrl, string badgeURI) payable",
+  "event BountyCreated(uint256 indexed bountyId, address indexed creator, uint256 reward)"
+]);
 
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, bountyInterface, signer);
-      const rewardWei = ethers.parseEther(String(rewardAmount));
+const contract = new ethers.Contract(CONTRACT_ADDRESS, bountyInterface, signer);
 
-      const tx = await contract.createBounty(issueUrl.trim(), badgeURI, { value: rewardWei });
-      const receipt = await tx.wait();
+const rewardWei = ethers.parseEther(String(rewardAmount));
 
-      let createdId = null;
-      for (const log of receipt.logs || []) {
-        try {
-          const parsed = bountyInterface.parseLog(log);
-          if (parsed && parsed.name === "BountyCreated") {
-            createdId = parsed.args.id.toString();
-            break;
-          }
-        } catch (e) {}
-      }
+// 1️⃣ Send transaction
+const tx = await contract.createBounty(
+  issueUrl.trim(),
+  badgeURI,
+  { value: rewardWei }
+);
 
-      // ✅ Convert tags input into array without changing variable name
-      const tagsArray = tags.split(",").map(t => t.trim()).filter(t => t);
+// 2️⃣ Wait for confirmation
+const receipt = await tx.wait();
 
-      // ✅ Backend Save With Same Variable Names + NEW Schema fields
-      await axios.post("http://localhost:2025/api/bounties/create-bounty", {
-        bountyId: createdId ? Number(createdId) : null,
-        githubIssueUrl: issueUrl.trim(),
-        issueTitle:issueTitle.trim(),
-        rewardAmount: rewardAmount.toString(),
-        badgeURI: badgeURI,
-        creatorAddress: sender,
-        txHash: receipt.transactionHash || receipt.hash,
-        timestamp: Math.floor(Date.now() / 1000),
-        winnerAddress: null,
-        winnerUsername: null,
-        submissions: [],
+// 3️⃣ Extract REAL bountyId from event
+const event = receipt.logs
+  .map(log => {
+    try {
+      return contract.interface.parseLog(log);
+    } catch {
+      return null;
+    }
+  })
+  .find(e => e?.name === "BountyCreated");
 
+if (!event) {
+  throw new Error("BountyCreated event not found");
+}
 
-        // ✅ NEW ADDED SCHEMA FIELDS (same names kept)
-        projectName: projectName || null,
-        language: language,
-        difficultyLevel: difficultyLevel,
-        deadline: deadline || null,
-        rewardRange: rewardRange,
-        tags: tagsArray
-      });
+const realBountyId = Number(event.args.bountyId);
 
-      alert("🎉 Bounty created successfully!", sender);
+      
+// 5️⃣ Convert tags input into array
+const tagsArray = tags
+  .split(",")
+  .map(t => t.trim())
+  .filter(Boolean);
+
+// 6️⃣ Save EXACT blockchain ID to backend
+ const res = await axios.post("http://localhost:2025/api/bounties/create-bounty", {
+  bountyId: realBountyId,
+  githubIssueUrl: issueUrl.trim(),
+  issueTitle: issueTitle.trim(),
+  rewardAmount: rewardAmount.toString(),
+  badgeURI,
+  creatorAddress: sender,
+  txHash: receipt.hash,
+  timestamp: Math.floor(Date.now() / 1000),
+  winnerAddress: null,
+  winnerUsername: null,
+  submissions: [],
+
+  projectName: projectName || null,
+  language: language || "Solidity",
+  difficultyLevel: difficultyLevel || "Beginner",
+  deadline: deadline ? new Date(deadline) : null, // 🔥 FIX
+  rewardRange: rewardRange || "0 - 0.01 ETH",
+  tags: tagsArray
+},{
+  headers: {
+      Authorization: `Bearer ${token}`
+    }
+}
+);
+if (res.data.token) {
+  localStorage.setItem("gitbounty_token", res.data.token);
+
+  // 🔥 notify Navbar immediately
+  window.dispatchEvent(new Event("tokenUpdated"));
+}
+alert("🎉 Bounty created successfully!");
 
       // reset all fields
       setIssueUrl("");

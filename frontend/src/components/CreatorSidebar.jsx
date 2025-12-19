@@ -7,10 +7,11 @@ const CreatorSidebar = () => {
 
   const menuItems = [
     { icon: <FaGithub />, label: "Home", path: "/" },
-    { icon: <FaGithub />, label: "Created Bounties", path: "/bounty-details" },
-    { icon: <FaCrown />, label: "Handle Claims", path: "/handle-claim" },
-    { icon: <FaMedal />, label: "View Claims", path: "/view-claim" },
-    { icon: <FaTimesCircle />, label: "Closed Bounties", path: "/close-bounty" },
+    { icon: <FaGithub />, label: "Overview", path: "/creator-dash" },
+    { icon: <FaGithub />, label: "Create Bounty", path: "/create-bounty" },
+    { icon: <FaGithub />, label: "My Bounty", path: "/my-bounties" },
+    { icon: <FaGithub />, label: "Claims Review", path: "/claims-review" },
+
   ];
 
   return (

@@ -36,7 +36,7 @@ const testimonials = [
 const TestimonialCard = ({ item, onClick }) => (
   <div
     onClick={onClick}
-    className="shrink-0 w-[350px] rounded-2xl border border-gray-800/50 p-4 mx-2  
+    className="shrink-0 w-[350px] rounded-2xl border border-gray-800/50 p-1 mx-2  
       bg-black/40 backdrop-blur-sm hover:border-[#f50090] transition-all duration-300 
       cursor-pointer group"
   >

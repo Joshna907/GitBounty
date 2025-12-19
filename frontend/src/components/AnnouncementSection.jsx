@@ -1,6 +1,41 @@
-import React from "react";
+import React,{useState} from "react";
+import axios from "axios";
+
 
 const AnnouncementSection = () => {
+const [email,setEmail]= useState("");
+const [loading,setLoading] = useState(false);
+
+const handleSubscribe = async () => {
+  if (!email) {
+    alert("Please enter a valid email");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const res = await axios.post(
+      "http://localhost:2025/api/newsletter/subscribe",
+      { email }
+    );
+
+    alert("🎉 Subscribed successfully!");
+    setEmail("");
+  } catch (err) {
+    // 👇 READ BACKEND RESPONSE
+    if (err.response && err.response.status === 409) {
+      alert("⚠️ You are already subscribed");
+    } else {
+      alert("❌ Something went wrong. Try again later");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
   return (
     <section
       className=" bg-black relative w-full min-h-screen flex flex-col justify-center items-center text-center text-white px-4"
@@ -28,11 +63,16 @@ const AnnouncementSection = () => {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <input
             type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
             className="w-98 px-5 py-3 rounded-lg outline-none bg-white/10 text-white placeholder-gray-400 border border-white/20 focus:border-pink-400"
           />
-          <button className="bg-pink-600 hover:bg-pink-700 text-white px-5 py-3 rounded-lg font-medium transition">
-            Join the newsletter
+          <button 
+          onClick={handleSubscribe}
+          disabled={loading}
+          className="bg-pink-600 hover:bg-pink-700 text-white px-5 py-3 rounded-lg font-medium transition">
+  {loading ? "Joining..." : "Join the newsletter"}
           </button>
         </div>
       </div>

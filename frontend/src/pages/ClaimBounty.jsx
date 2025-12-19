@@ -17,7 +17,6 @@ const CONTRACT_ABI = [
 const ClaimBounty = () => {
   
 
-
   const [walletAddress, setWalletAddress] = useState("");
   const [bountyId, setBountyId] = useState("");
   const [proofLink, setProofLink] = useState("");
@@ -36,10 +35,6 @@ useEffect(() => {
     setReward(bounty.rewardAmount);           
   }
 }, [bounty]);
-
-
-  
-  
   
   // Auto detect wallet
   useEffect(() => {
@@ -98,31 +93,40 @@ useEffect(() => {
       alert("⏳ Waiting for blockchain confirmation...");
       await tx.wait();
 
-      // Save to backend
-      const backendUrl = `${BACKEND_BASE}/api/bounties/${bountyId}/claim`;
-
-      const payload = {
-        bountyId:bountyId,
-        developerAddress: signerAddr,
-        submissionLink: proofLink,
-        notes: note, // ✅ send developer note
-      };
-
-      try {
-        const res = await axios.post(backendUrl, payload);
-        if (res.data?.success) {
-          alert("✅ Claim submitted successfully to blockchain + backend.");
-        } else {
-          alert("⚠️ On-chain success, but backend returned unexpected response.");
-        }
-      } catch (backendErr) {
-        alert("⚠️ On-chain success, but backend save failed. Check console.");
-        console.error("Backend Error:", backendErr);
-      }
+      
 
       setBountyId("");
       setProofLink("");
       setNote("");
+// Save to backend
+const token = localStorage.getItem("gitbounty_token");
+const backendUrl = `${BACKEND_BASE}/api/bounties/${bountyId}/claim`;
+
+const payload = {
+  bountyId: bountyId,
+  developerAddress: signerAddr,
+  submissionLink: proofLink,
+  notes: note,
+};
+
+const res = await axios.post(
+  backendUrl,
+  payload,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+if (res.data?.success) {
+  if (res.data.token) {
+    localStorage.setItem("gitbounty_token", res.data.token);
+    window.dispatchEvent(new Event("tokenUpdated"));
+  }
+
+  alert("✅ Claim submitted successfully to blockchain + backend.");
+}
 
     } catch (err) {
       console.error("Submit error:", err);
@@ -153,20 +157,7 @@ useEffect(() => {
             Submit your proof link securely and get verified for your on-chain reward.
           </p>
 
-          {/* Bounty ID */}
-          {/* <div className="flex items-center gap-3 bg-[#111]/50 px-5 py-4 rounded-xl mb-5 
-                          border border-[#ca8ff1]/30 shadow-[0_0_12px_rgba(202,143,241,0.12)]">
-            <FaCoins className="text-[#f50090] text-xl"/>
-            <input
-              type="hidden"
-              placeholder="Enter Bounty ID..."
-              className="flex-1 bg-transparent text-lg outline-none placeholder-gray-600"
-              value={bountyId}
-              onChange={(e) => setBountyId(e.target.value)}
-              readOnly 
-            />
-          </div> */}
-
+          
           {/* Proof Link */}
           <div className="flex items-center gap-3 bg-[#111]/50 px-5 py-4 rounded-xl mb-5 
                           border border-[#ca8ff1]/30 shadow-[0_0_12px_rgba(202,143,241,0.12)]">

@@ -9,14 +9,16 @@ import AnnouncementSection from "./components/AnnouncementSection";
 import Home from "./pages/Home";
 import SignIn from "./pages/SignIn";
 import ExploreBounty from "./pages/ExploreBounty";
-import DashBoard from "./pages/DashBoard";
 import CreateBounty from "./pages/CreateBounty";
 import ClaimBounty from "./pages/ClaimBounty";
 import BountyDetails from "./pages/BountyDetails";
 import ViewClaims from "./pages/ViewCliam";
 import HandleCliam from "./pages/HandleCliam";
 import CreatedBountyDetails from "./pages/CreatedBountyDetails";
-import CloseBounty from "./pages/CloseBounty";
+import UserDashBoard from "./pages/UserDashBoard";
+import MyBounties from "./pages/MyBounties";
+import CreatorDashClaim from "./pages/CreatorDashClaim";
+import AuthSuccess from "./pages/AuthSuccess";
 
 
 function App() {
@@ -24,9 +26,12 @@ function App() {
 
  const hideLayout = 
   location.pathname.startsWith("/view-claim") ||
-  location.pathname.startsWith("/handle-claim") ||
-  location.pathname.startsWith("/bounty-details") ||
-  location.pathname.startsWith("/close-bounty") ;
+  location.pathname.startsWith("/creator-dash")||
+  location.pathname.startsWith("/dev-dash")||
+  location.pathname.startsWith("/my-bounties")||
+  location.pathname.startsWith("/claims-review");
+
+
 
 
   return (
@@ -36,8 +41,9 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/sign-in" element={<SignIn />} />
+        <Route path="/auth-success" element={<AuthSuccess />} />
+
         <Route path="/explore" element={<ExploreBounty />} />
-        <Route path="/dashboard" element={<DashBoard />} />
         <Route path="/create-bounty" element={<CreateBounty />} />
         <Route path="/claim" element={<ClaimBounty />} />
         <Route path="/bounty/:id" element={<BountyDetails />} />
@@ -49,12 +55,18 @@ function App() {
         {/* static page */}
         <Route path="/view-claim" element={<ViewClaims />} />
         <Route path="/handle-claim" element={<HandleCliam />} />
-        <Route path="/bounty-details" element={<CreatedBountyDetails />} />
-        <Route path="/close-bounty" element={< CloseBounty/>} />
+        
+        <Route path="/creator-dash" element={<CreatedBountyDetails />} />
+        <Route path="/my-bounties" element={<MyBounties />} />
+        <Route path="/claims-review" element={<CreatorDashClaim />} />
         {/* dynmic page */}
         <Route path="/view-claim/:id" element={<ViewClaims />} />
-        <Route path="/handle-claim/:id/:devAddress" element={< HandleCliam/>} />
-        <Route path="/close-bounty/:id" element={<CloseBounty />} />
+        <Route path="/handle-claim/:bountyId/:devAddress" element={< HandleCliam/>} />
+
+      
+      {/* developer dashboard */}
+      <Route path="/dev-dash" element={<UserDashBoard />} />
+
 
 
       </Routes>

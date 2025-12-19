@@ -5,6 +5,12 @@ import {
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import CreatorLayout from "../Layout/CreatorLayout";
+import { ethers } from "ethers";
+import bountyAbi from "../contractABI/BountyDispenserGasless.json";
+
+
+const CONTRACT_ADDRESS = "0xd1EF81d6e2fC6f9958E03948688784cB2f14DaF9";
+
 
 const StatBox = ({ icon, label, value }) => (
   <div className="flex flex-col items-center bg-[#111]/60 p-5 rounded-xl border border-[#f50090]/25 shadow-[0_0_16px_rgba(245,0,144,0.15)] hover:shadow-[0_0_30px_rgba(245,0,144,0.4)] transition-all">
@@ -14,18 +20,20 @@ const StatBox = ({ icon, label, value }) => (
   </div>
 );
 
+
+
+
+
 const CreatedBountyDetails = () => {
   const navigate = useNavigate();
 
   const [bounties, setBounties] = useState([]);
   const [recentSubs, setRecentSubs] = useState([]);
-  const [mintedBadges, setMintedBadges] = useState([]);
   const [wallet, setWallet] = useState(null);
+  const [mintedBadeges,setMintedBadges]= useState([]);
+  
 
-  // ⛔ Do NOT auto connect wallet
-  // Show a button so user can connect manually
-
-  const connectWallet = async () => {
+   const connectWallet = async () => {
     try {
       if (!window.ethereum) return alert("MetaMask not found!");
 
@@ -40,25 +48,64 @@ const CreatedBountyDetails = () => {
   };
 
   // Fetch data ONLY when wallet is connected
-  useEffect(() => {
-    if (!wallet) return;
+ const fetchCreatorData = async () => {
+  if (!wallet) return;
 
-    const fetchCreatorData = async () => {
-      try {
-        const res = await axios.get(
-          `http://localhost:2025/api/bounties/creator/${wallet}`
-        );
+  try {
+    const res = await axios.get(
+      `http://localhost:2025/api/bounties/creator/${wallet}`
+    );
 
-        setBounties(res.data.bounties || []);
-        setRecentSubs(res.data.recentSubmissions || []);
-        setMintedBadges(res.data.badges || []);
-      } catch (err) {
-        console.error("Error loading creator data:", err);
-      }
-    };
+    setBounties(res.data.bounties || []);
+    setRecentSubs(res.data.recentSubmissions || []);
+    setMintedBadges(res.data.badges || []);
+  } catch (err) {
+    console.error("Error loading creator data:", err);
+  }
+};
 
-    fetchCreatorData();
-  }, [wallet]);
+useEffect(() => {
+  fetchCreatorData();
+}, [wallet]);
+
+
+  //close bounty
+  const handleCloseBounty = async (bountyId) => {
+  try {
+    if (!window.ethereum) return alert("MetaMask not installed");
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    const contract = new ethers.Contract(
+      CONTRACT_ADDRESS,
+      bountyAbi.abi,
+      signer
+    );
+
+    const tx = await contract.closeBounty(Number(bountyId));
+    await tx.wait();
+
+    await axios.patch(`http://localhost:2025/api/close/${bountyId}`);
+
+    // instant UI update
+    setBounties(prev =>
+      prev.map(b =>
+        b.bountyId === bountyId ? { ...b, status: "CLOSED" } : b
+      )
+    );
+
+    // backend re-sync (automatic refresh)
+    await fetchCreatorData();
+
+    alert("✅ Bounty closed successfully");
+
+  } catch (err) {
+    console.error("❌ Close bounty error:", err);
+    alert(err?.reason || err?.message || "Failed to close bounty");
+  }
+};
+
 
   return (
     <div className="flex bg-[#090909] text-white min-h-screen">
@@ -109,7 +156,7 @@ const CreatedBountyDetails = () => {
             <section className="mt-8 grid grid-cols-3 gap-6">
               <StatBox icon={<FaCode />} label="Open Bounties" value={bounties.filter(b => b.status === "OPEN").length} />
               <StatBox icon={<FaClock />} label="Waiting Claims" value={recentSubs.length} />
-              <StatBox icon={<FaMedal />} label="NFT Minted" value={mintedBadges.length} />
+              <StatBox icon={<FaMedal />} label="Close Bounty" value={bounties.filter(b => b.status === "CLOSED").length} />
             </section>
 
             {/* Created Bounties Table */}
@@ -166,24 +213,19 @@ const CreatedBountyDetails = () => {
                               View Bounty
                             </button>
 
-                            {/* Handle */}
-                            <button
-                              onClick={() => navigate(`/close/${b._id}/${wallet}`)}
-                              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ca8ff1]/15 text-[#ca8ff1] border border-[#ca8ff1]/30 hover:bg-[#ca8ff1]/25"
-                            >
-                              close Bounty
-                            </button>
-
+                           
                             {/* Close Bounty */}
-                            {b.status === "OPEN" && (
-                              <button
-                                onClick={() => navigate(`/close-bounty/${b._id}`)}
-                                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25"
-                              >
-                                Close
-                              </button>
-                            )}
-
+                            <button
+                          onClick={() => handleCloseBounty(b.bountyId)}
+                          disabled={b.status === "CLOSED"}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold
+                                    bg-red-500/15 text-red-400
+                                    border border-red-500/30
+                                    hover:bg-red-500/25
+                                    disabled:opacity-40"
+                        >
+                          {b.status === "CLOSED" ? "Closed" : "Close Bounty"}
+                        </button>
                           </div>
                         </td>
 

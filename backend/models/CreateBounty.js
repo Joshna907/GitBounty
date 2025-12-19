@@ -9,7 +9,7 @@ const bountySchema = new mongoose.Schema({
   creatorAddress: String,  // wallet address
   status: { 
     type: String,
-    enum: ["OPEN","IN_REVIEW", "APPROVED", "CLOSED"],
+    enum: ["OPEN","IN_REVIEW", "APPROVED", "REJECT", "CLOSED"],
     default: "OPEN"
   },
 
@@ -38,8 +38,12 @@ const bountySchema = new mongoose.Schema({
       developerAddress: String,
       submissionLink: String,
       notes: String,
-      createdAt: { type: Date, default: Date.now }
+      createdAt: { type: Date, default: Date.now },
 
+      // NEW FIELDS
+    isApproved: { type: Boolean, default: false },
+    messageFromCreator: { type: String, default: null },
+    updatedAt: { type: Date }
     }
   ],
   winnerAddress: { type: String, default: null }, // set null until approved

@@ -136,9 +136,12 @@ const FeaturesSection = () => {
                 />
               </svg>
             </div>
-            <h3 className="text-2xl font-semibold mb-2">Gasless Transactions</h3>
+            <h3 className="text-2xl font-semibold mb-2">
+              Escrow‑Based Smart Contracts
+            </h3>
             <p className="text-gray-400 text-l max-w-xs">
-              No need to pay transaction fees while submitting or claiming rewards — efficiency meets Web3.
+              Bounty rewards are locked securely in Ethereum smart contracts and
+              released only after verified task completion, ensuring trust and security.
             </p>
           </div>
         </div>
